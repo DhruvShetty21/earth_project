@@ -11,3 +11,10 @@
 [Meteorological and Oceanographic Satellite Data Archival Centre (MOSDAC)](https://www.mosdac.gov.in/) <br>
 [Bhuvan Geoportal](https://bhuvan.nrsc.gov.in/) <br>
 [NRSC Open Data Archive](https://bhuvan.nrsc.gov.in/)
+
+# Existing Solutions
+[NASA Eyes](https://science.nasa.gov/eyes/) <br>
+[Stellarium](https://stellarium-web.org/) <br>
+[Sky Safari](https://skysafariastronomy.com/) <br>
+[Heaven's Above](https://www.heavens-above.com/) <br>
+[N2YO](https://www.n2yo.com/)
