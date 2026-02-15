@@ -367,17 +367,27 @@ const EarthImpact = (() => {
 
     async function _fetchAgricultureData() {
         try {
-            // Fetch soil + weather for each region in parallel
+            // Open-Meteo API — verified variable names as of 2024:
+            // soil_moisture_0_to_1cm is HOURLY only (not daily)
+            // et0_fao_evapotranspiration is DAILY
+            // vapor_pressure_deficit_max is DAILY (NOT vapour_pressure_deficit)
+            // soil_temperature_0cm is HOURLY
             const results = await Promise.allSettled(
                 AGRI_REGIONS.map(async reg => {
                     const url = `${APIS.OPEN_METEO}?latitude=${reg.lat}&longitude=${reg.lon}` +
-                        `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,et0_fao_evapotranspiration,` +
-                        `soil_moisture_0_to_10cm,soil_moisture_10_to_40cm,vapor_pressure_deficit_max,` +
-                        `sunshine_duration,uv_index_max` +
-                        `&hourly=soil_temperature_0cm,soil_moisture_0_to_1cm` +
+                        `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,` +
+                        `et0_fao_evapotranspiration,vapor_pressure_deficit_max` +
+                        `&hourly=soil_moisture_0_to_1cm,soil_moisture_1_to_3cm,` +
+                        `soil_moisture_3_to_9cm,soil_moisture_9_to_27cm,` +
+                        `temperature_2m` +
                         `&forecast_days=7&timezone=UTC`;
-                    const r   = await _get(url);
-                    const d   = await r.json();
+                    const r = await _get(url);
+                    const d = await r.json();
+                    // Log first region response to help debug variable names
+                    if (reg.name === 'North America') {
+                        console.log('[Agri] Open-Meteo daily keys:', Object.keys(d.daily ?? {}));
+                        console.log('[Agri] Open-Meteo hourly keys:', Object.keys(d.hourly ?? {}));
+                    }
                     return { region: reg, daily: d.daily, hourly: d.hourly };
                 })
             );
@@ -386,69 +396,95 @@ const EarthImpact = (() => {
                 .filter(r => r.status === 'fulfilled')
                 .map(r => r.value);
 
-            // Aggregate soil moisture (avg across all regions, last reading)
+            // Safe average helper — returns fallback if array is empty or all null
+            const safeAvg = (arr, fallback = 0) => {
+                if (!arr || !arr.length) return fallback;
+                const valid = arr.filter(v => v != null && !isNaN(v));
+                return valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : fallback;
+            };
+
+            // Safe toFixed that never produces NaN
+            const fmt = (v, d = 2, fallback = 0) => {
+                const n = parseFloat(v);
+                return isNaN(n) ? fallback : +n.toFixed(d);
+            };
+
+            // Aggregate soil moisture across all regions for the global KPI
             const soilMoistures = regions.map(r => {
-                const sm = r.daily?.soil_moisture_0_to_10cm;
-                return sm ? sm.filter(v => v != null).at(-1) ?? 0.25 : 0.25;
+                const sm = r.hourly?.soil_moisture_0_to_1cm;
+                return safeAvg(sm, 0.25);
             });
-            const avgSoilMoisture = soilMoistures.reduce((a, b) => a + b, 0) / soilMoistures.length;
+            const avgSoilMoisture = safeAvg(soilMoistures, 0.25);
 
-            // Per-region data for the panel
+            // Per-region data
             const regionData = regions.map(r => {
-                const d   = r.daily;
-                const sm0 = d?.soil_moisture_0_to_10cm?.filter(v => v != null).slice(-3) ?? [0.25];
-                const sm1 = d?.soil_moisture_10_to_40cm?.filter(v => v != null).slice(-3) ?? [0.22];
-                const et0 = d?.et0_fao_evapotranspiration?.filter(v => v != null).slice(-7) ?? [];
-                const prec = d?.precipitation_sum?.filter(v => v != null).slice(-7) ?? [];
-                const vpd  = d?.vapor_pressure_deficit_max?.filter(v => v != null).slice(-3) ?? [];
-                const avg  = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
-                const soilMoist   = avg(sm0);
-                const soilMoist10 = avg(sm1);
-                const etAvg       = avg(et0);
-                const precAvg     = avg(prec) * 7;  // total 7d
-                const vpdAvg      = avg(vpd);
-                const waterBalance = +(precAvg - etAvg * 7).toFixed(1);
+                const daily  = r.daily  ?? {};
+                const hourly = r.hourly ?? {};
 
-                // Simple crop stress index (0-100)
+                // Soil moisture: average of top layer hourly readings
+                const sm0  = safeAvg(hourly.soil_moisture_0_to_1cm,  0.25);
+                const sm3  = safeAvg(hourly.soil_moisture_3_to_9cm,   0.22);
+                const sm9  = safeAvg(hourly.soil_moisture_9_to_27cm,  0.20);
+
+                // ET0 (daily, mm/day)
+                const etArr  = (daily.et0_fao_evapotranspiration ?? []).filter(v => v != null && !isNaN(v));
+                const etAvg  = safeAvg(etArr, 3.0);
+
+                // Precipitation (daily, mm)
+                const precArr  = (daily.precipitation_sum ?? []).filter(v => v != null && !isNaN(v));
+                const precSum  = precArr.reduce((a, b) => a + b, 0) || 0;   // 7-day total
+
+                // VPD (daily, hPa) — correct variable is vapor_pressure_deficit_max (daily)
+                const vpdAvg = safeAvg(daily.vapor_pressure_deficit_max, 1.5);
+
+                // Water balance (mm): total precip − total ET0 over 7 days
+                const waterBalance = fmt(precSum - etAvg * etArr.length, 1);
+
+                // Stress index (0–100)
                 let stress = 0;
-                if (soilMoist  < 0.15) stress += 30;   // dry stress
-                if (soilMoist  > 0.45) stress += 20;   // waterlogged
-                if (vpdAvg     > 2.5)  stress += 25;   // heat/drought
-                if (waterBalance < -15) stress += 25;  // precip deficit
+                if (sm0    < 0.10) stress += 35;
+                if (sm0    > 0.45) stress += 20;
+                if (vpdAvg > 2.5)  stress += 25;
+                if (waterBalance < -20) stress += 20;
                 stress = Math.min(100, stress);
 
-                // NDVI proxy (simple: higher soil moisture + precipitation = higher NDVI)
-                const ndvi = +Math.min(0.95, Math.max(0.05, 0.3 + soilMoist * 1.2 + Math.min(prec.length ? avg(prec) / 10 : 0, 0.3))).toFixed(2);
+                // NDVI proxy: driven by soil moisture + rain
+                const precipFactor = Math.min(precArr.length ? safeAvg(precArr) / 8 : 0, 0.3);
+                const ndvi = fmt(Math.min(0.95, Math.max(0.05, 0.25 + sm0 * 1.4 + precipFactor)), 2);
 
                 return {
                     name:         r.region.name,
                     crop:         r.region.crop,
-                    soilMoist:    +soilMoist.toFixed(3),
-                    soilMoist10:  +soilMoist10.toFixed(3),
-                    et0:          +etAvg.toFixed(2),
-                    precip7d:     +precAvg.toFixed(1),
+                    soilMoist:    fmt(sm0,  3),
+                    soilMoist10:  fmt(sm9,  3),
+                    et0:          fmt(etAvg, 2),
+                    precip7d:     fmt(precSum, 1),
                     waterBalance,
-                    vpdAvg:       +vpdAvg.toFixed(2),
+                    vpdAvg:       fmt(vpdAvg, 2),
                     ndvi,
                     stressIndex:  stress,
                     stressLevel:  stress < 20 ? 'Low' : stress < 50 ? 'Moderate' : 'High',
-                    irrigation:   soilMoist < 0.20 ? 'Required' : soilMoist < 0.30 ? 'Advisory' : 'Adequate',
-                    temps: d?.temperature_2m_max?.slice(-7) ?? [],
-                    precips: d?.precipitation_sum?.slice(-7) ?? [],
+                    irrigation:   sm0 < 0.12 ? 'Required' : sm0 < 0.25 ? 'Advisory' : 'Adequate',
+                    temps:   (daily.temperature_2m_max  ?? []).slice(0, 7),
+                    precips: (daily.precipitation_sum   ?? []).slice(0, 7),
                 };
             });
 
-            // Global NDVI (weighted avg)
-            const globalNDVI = +(regionData.reduce((s, r) => s + r.ndvi, 0) / regionData.length).toFixed(2);
+            // Guard against empty regionData before computing global NDVI
+            const globalNDVI = regionData.length
+                ? fmt(regionData.reduce((s, r) => s + (isNaN(r.ndvi) ? 0 : r.ndvi), 0) / regionData.length, 2)
+                : 0.55;
 
-            // Drought assessment
             const droughtRegions = regionData.filter(r => r.stressIndex > 50);
 
-            // 7-day global precip forecast
-            const dailyPrecip = [];
-            regions[0]?.daily?.precipitation_sum?.slice(0, 7).forEach((v, i) => {
+            // 7-day precip forecast from first successful region
+            const firstRegionPrecip = regions[0]?.daily?.precipitation_sum ?? [];
+            const dailyPrecip = firstRegionPrecip.slice(0, 7).map((v, i) => {
                 const d = new Date(); d.setDate(d.getDate() + i);
-                dailyPrecip.push({ day: d.toLocaleDateString('en', { weekday: 'short' }), mm: +((v || 0) * 2.5).toFixed(1) });
+                return {
+                    day: d.toLocaleDateString('en', { weekday: 'short' }),
+                    mm:  fmt(isNaN(v) ? 0 : v, 1)
+                };
             });
 
             return {

@@ -289,7 +289,7 @@ const EarthImpactUI = (() => {
     }
 
     // ── SVG Line Chart ──────────────────────────────────────────────────────
-    function _lineChart(x, y, color, unit = '', { h = 180, showDots = true, gradient = true } = {}) {
+    function _lineChart(x, y, color, unit = '', { h = 180, showDots = false, gradient = true } = {}) {
         if (!x?.length || !y?.length) return '<p class="ei-no-data">No data</p>';
         const W = 600, H = h, P = { t: 24, r: 20, b: 32, l: 48 };
         const xMin = Math.min(...x), xMax = Math.max(...x);
@@ -297,35 +297,64 @@ const EarthImpactUI = (() => {
         const yRange = (yMax - yMin) || 1;
         const xS = v => P.l + ((v - xMin) / (xMax - xMin)) * (W - P.l - P.r);
         const yS = v => P.t + (1 - (v - yMin) / yRange) * (H - P.t - P.b);
-        const pts = x.map((xi, i) => `${xS(xi).toFixed(1)},${yS(y[i]).toFixed(1)}`).join(' ');
-        const fillPts = `${xS(x[0]).toFixed(1)},${H - P.b} ${pts} ${xS(x.at(-1)).toFixed(1)},${H - P.b}`;
         const gradId = `eg${Math.random().toString(36).slice(2,7)}`;
-        const ticks  = 4;
-        const labels = Array.from({ length: ticks + 1 }, (_, i) => yMin + yRange * i / ticks);
+
+        // Y-axis: 4 ticks
+        const ticks = 4;
+        const yLabels = Array.from({ length: ticks + 1 }, (_, i) => yMin + yRange * i / ticks);
+
+        // X-axis: max 6 labels, evenly spaced
+        const xLabelCount = Math.min(6, x.length);
+        const xLabelIndices = x.length <= 1 ? [0] : Array.from({ length: xLabelCount }, (_, i) =>
+            Math.round(i * (x.length - 1) / (xLabelCount - 1))
+        );
+
+        // Build smooth cubic bezier path
+        const pts2d = x.map((xi, i) => [xS(xi), yS(y[i])]);
+        let pathD = `M ${pts2d[0][0].toFixed(1)},${pts2d[0][1].toFixed(1)}`;
+        for (let i = 1; i < pts2d.length; i++) {
+            const [x0, y0] = pts2d[i - 1];
+            const [x1, y1] = pts2d[i];
+            const cpx = (x0 + x1) / 2;
+            pathD += ` C ${cpx.toFixed(1)},${y0.toFixed(1)} ${cpx.toFixed(1)},${y1.toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)}`;
+        }
+
+        // Area fill path
+        const areaD = pathD +
+            ` L ${pts2d.at(-1)[0].toFixed(1)},${H - P.b}` +
+            ` L ${pts2d[0][0].toFixed(1)},${H - P.b} Z`;
+
+        // Only show dots on sparse datasets (≤ 15 points)
+        const showDotsFinal = showDots || x.length <= 15;
 
         return `
         <svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" style="border-radius:6px">
             <defs>
                 <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="${color}" stop-opacity=".25"/>
+                    <stop offset="0%" stop-color="${color}" stop-opacity=".3"/>
                     <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
                 </linearGradient>
             </defs>
-            <!-- Grid -->
-            ${labels.map(v => `
-                <line x1="${P.l}" y1="${yS(v).toFixed(1)}" x2="${W-P.r}" y2="${yS(v).toFixed(1)}" stroke="#1e2a45" stroke-width="1" stroke-dasharray="3,4"/>
-                <text x="${P.l-6}" y="${yS(v)+4}" text-anchor="end" fill="#6b7fa8" font-size="10" font-family="JetBrains Mono">${v.toFixed(1)}</text>
+            <!-- Grid lines + Y labels -->
+            ${yLabels.map(v => `
+                <line x1="${P.l}" y1="${yS(v).toFixed(1)}" x2="${W-P.r}" y2="${yS(v).toFixed(1)}" stroke="#1e2a45" stroke-width="1" stroke-dasharray="3,5"/>
+                <text x="${P.l-6}" y="${(yS(v)+4).toFixed(1)}" text-anchor="end" fill="#6b7fa8" font-size="10" font-family="JetBrains Mono,monospace">${v.toFixed(2)}</text>
             `).join('')}
             <!-- Area fill -->
-            ${gradient ? `<polygon points="${fillPts}" fill="url(#${gradId})"/>` : ''}
-            <!-- X labels (every ~5) -->
-            ${x.filter((_, i) => i === 0 || i === x.length - 1 || (i % Math.max(1, Math.floor(x.length / 6)) === 0)).map(xi =>
-                `<text x="${xS(xi).toFixed(1)}" y="${H-P.b+14}" text-anchor="middle" fill="#6b7fa8" font-size="10" font-family="JetBrains Mono">${xi}</text>`
+            ${gradient ? `<path d="${areaD}" fill="url(#${gradId})"/>` : ''}
+            <!-- Smooth line -->
+            <path d="${pathD}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+            <!-- X-axis labels -->
+            ${xLabelIndices.map(i =>
+                `<text x="${xS(x[i]).toFixed(1)}" y="${H-P.b+14}" text-anchor="middle" fill="#6b7fa8" font-size="10" font-family="JetBrains Mono,monospace">${x[i]}</text>`
             ).join('')}
-            <!-- Line -->
-            <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-            <!-- Dots -->
-            ${showDots ? x.map((xi, i) => `<circle cx="${xS(xi).toFixed(1)}" cy="${yS(y[i]).toFixed(1)}" r="3.5" fill="${color}" stroke="${C.bg0}" stroke-width="1.5"/>`).join('') : ''}
+            <!-- Dots for sparse data only -->
+            ${showDotsFinal ? pts2d.map(([cx, cy]) =>
+                `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="3" fill="${color}" stroke="${C.bg0}" stroke-width="1.5"/>`
+            ).join('') : ''}
+            <!-- Last point always highlighted -->
+            <circle cx="${pts2d.at(-1)[0].toFixed(1)}" cy="${pts2d.at(-1)[1].toFixed(1)}" r="5" fill="${color}" stroke="${C.bg0}" stroke-width="2"/>
+            <circle cx="${pts2d.at(-1)[0].toFixed(1)}" cy="${pts2d.at(-1)[1].toFixed(1)}" r="9" fill="${color}" stroke-width="0" opacity="0.2"/>
         </svg>`;
     }
 
@@ -789,7 +818,6 @@ const EarthImpactUI = (() => {
             </div>
         </div>`;
     }
-    
 
     // ════════════════════════════════════════════════════════════════════════
     //  AGRICULTURE TAB
@@ -799,31 +827,43 @@ const EarthImpactUI = (() => {
 
         const { regions = [], globalNDVI, avgSoilMoisture, droughtCount, precipForecast = [] } = a;
 
+        // Guard against NaN — use fallback values if data isn't ready
+        const safeNDVI  = (isNaN(globalNDVI)       || globalNDVI == null)  ? 0.55 : globalNDVI;
+        const safeSoil  = (isNaN(avgSoilMoisture)   || avgSoilMoisture == null) ? 0.25 : avgSoilMoisture;
+        const ndviPct   = Math.min(100, Math.max(0, Math.round(safeNDVI * 100)));
+        const soilPct   = Math.min(100, Math.max(0, Math.round(safeSoil * 200)));  // 0.5 m³/m³ = 100%
+        const precipTotal = precipForecast.reduce((s, p) => s + (isNaN(p.mm) ? 0 : p.mm), 0);
+
         // 7-day precip bar chart
-        const precipMax = Math.max(...precipForecast.map(p => p.mm), 1);
-        const precipBars = precipForecast.map(p => `
+        const precipMax = Math.max(...precipForecast.map(p => isNaN(p.mm) ? 0 : p.mm), 1);
+        const precipBars = precipForecast.map(p => {
+            const mm = isNaN(p.mm) ? 0 : p.mm;
+            return `
             <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1">
-                <div style="font-size:.62rem;color:${C.muted};font-family:'JetBrains Mono',monospace">${p.mm}</div>
-                <div style="height:${Math.max(3, (p.mm / precipMax) * 70).toFixed(0)}px;width:100%;background:${C.climate};border-radius:3px 3px 0 0;opacity:.8;min-height:3px"></div>
+                <div style="font-size:.62rem;color:${C.muted};font-family:'JetBrains Mono',monospace">${mm}</div>
+                <div style="height:${Math.max(3, (mm / precipMax) * 70).toFixed(0)}px;width:100%;background:${C.climate};border-radius:3px 3px 0 0;opacity:.8;min-height:3px"></div>
                 <div style="font-size:.65rem;color:${C.muted}">${p.day}</div>
-            </div>`).join('');
+            </div>`;
+        }).join('');
+
+        const hasRegions = regions.length > 0;
 
         return `
         <div>
             <!-- Global overview KPIs -->
             <div class="ei-kpi-row" style="--accent:${C.agri}">
                 <div class="ei-kpi">
-                    ${_ring(Math.round(globalNDVI * 100), C.agri, 'NDVI', globalNDVI?.toFixed(2))}
+                    ${_ring(ndviPct, C.agri, 'NDVI', safeNDVI.toFixed(2))}
                 </div>
                 <div class="ei-kpi">
-                    ${_ring(Math.round(avgSoilMoisture * 200), '#38bdf8', 'SOIL', `${(avgSoilMoisture * 100).toFixed(0)}%`)}
+                    ${_ring(soilPct, '#38bdf8', 'SOIL', `${(safeSoil * 100).toFixed(0)}%`)}
                 </div>
                 <div class="ei-kpi">
                     <div class="ei-kpi-v" style="color:${droughtCount > 3 ? C.disaster : droughtCount > 1 ? C.gold : C.agri}">${droughtCount ?? 0}</div>
                     <div class="ei-kpi-l">Drought Risk Regions</div>
                 </div>
                 <div class="ei-kpi">
-                    <div class="ei-kpi-v" style="color:${C.climate}">${precipForecast.reduce((s, p) => s + p.mm, 0).toFixed(0)} mm</div>
+                    <div class="ei-kpi-v" style="color:${C.climate}">${precipTotal.toFixed(0)} mm</div>
                     <div class="ei-kpi-l">7-Day Global Precip</div>
                 </div>
                 <div class="ei-kpi">
@@ -832,12 +872,20 @@ const EarthImpactUI = (() => {
                 </div>
             </div>
 
+            ${!hasRegions ? `
+            <div class="ei-card" style="border-color:rgba(251,191,36,.2)">
+                <div style="text-align:center;padding:20px;color:${C.muted}">
+                    <div style="font-size:1.5rem;margin-bottom:8px">⏳</div>
+                    <div style="font-weight:600;margin-bottom:6px">Fetching regional data from Open-Meteo…</div>
+                    <div style="font-size:.75rem">7 parallel API calls in progress. Refresh in a moment if this persists.</div>
+                </div>
+            </div>` : `
             <div class="ei-grid2">
                 <!-- Region health table -->
                 <div class="ei-card" style="--accent:${C.agri};--accentRgb:74,222,128">
                     <div class="ei-card-head">
                         <div class="ei-card-title">🌾 Regional Crop Health
-                            <span class="ei-card-badge">Open-Meteo</span>
+                            <span class="ei-card-badge">Open-Meteo LIVE</span>
                         </div>
                     </div>
                     <table class="ei-region-table">
@@ -855,6 +903,9 @@ const EarthImpactUI = (() => {
                             ${regions.map(r => {
                                 const sc = _stressColor(r.stressIndex);
                                 const irrColor = r.irrigation === 'Required' ? C.disaster : r.irrigation === 'Advisory' ? C.gold : C.agri;
+                                const ndviVal = isNaN(r.ndvi) ? '—' : r.ndvi;
+                                const soilVal = isNaN(r.soilMoist) ? '—' : `${(r.soilMoist * 100).toFixed(0)}%`;
+                                const ndviNum = isNaN(r.ndvi) ? 0.5 : r.ndvi;
                                 return `
                                 <tr>
                                     <td style="font-weight:600">${r.name}</td>
@@ -862,19 +913,19 @@ const EarthImpactUI = (() => {
                                     <td>
                                         <div style="display:flex;align-items:center;gap:6px">
                                             <div class="ei-ndvi-bar">
-                                                <div class="ei-ndvi-indicator" style="left:${(r.ndvi * 100).toFixed(0)}%"></div>
+                                                <div class="ei-ndvi-indicator" style="left:${(ndviNum * 100).toFixed(0)}%"></div>
                                             </div>
-                                            <span style="font-size:.72rem;font-family:'JetBrains Mono',monospace;color:${r.ndvi > 0.6 ? C.agri : r.ndvi > 0.35 ? C.gold : C.disaster}">${r.ndvi}</span>
+                                            <span style="font-size:.72rem;font-family:'JetBrains Mono',monospace;color:${ndviNum > 0.6 ? C.agri : ndviNum > 0.35 ? C.gold : C.disaster}">${ndviVal}</span>
                                         </div>
                                     </td>
-                                    <td style="font-family:'JetBrains Mono',monospace;font-size:.75rem;color:${C.climate}">${(r.soilMoist * 100).toFixed(0)}%</td>
+                                    <td style="font-family:'JetBrains Mono',monospace;font-size:.75rem;color:${C.climate}">${soilVal}</td>
                                     <td><span class="ei-stress-pill" style="background:${sc}22;color:${sc};border:1px solid ${sc}44">${r.stressLevel}</span></td>
                                     <td style="color:${irrColor};font-size:.72rem;font-weight:600">${r.irrigation}</td>
                                 </tr>`;
                             }).join('')}
                         </tbody>
                     </table>
-                    <div class="ei-source" style="margin-top:10px">Soil moisture from Open-Meteo ERA5 reanalysis · Updated daily</div>
+                    <div class="ei-source" style="margin-top:10px">Soil moisture · ET₀ · VPD from Open-Meteo ERA5 reanalysis · Updated 2×/day</div>
                 </div>
 
                 <div>
@@ -888,38 +939,38 @@ const EarthImpactUI = (() => {
                         <div style="display:flex;align-items:flex-end;gap:4px;height:90px;margin-bottom:8px;padding:0 4px">
                             ${precipBars}
                         </div>
-                        <div class="ei-source">Global average · mm/day</div>
+                        <div class="ei-source">North America representative · mm/day</div>
                     </div>
 
-                    <!-- Regional ET0 + water balance -->
+                    <!-- Regional water balance -->
                     <div class="ei-card" style="--accent:${C.agri};--accentRgb:74,222,128">
                         <div class="ei-card-head">
                             <div class="ei-card-title">💧 Water Balance by Region</div>
                         </div>
                         <div class="ei-bars">
                             ${regions.map(r => {
-                                const wb = r.waterBalance;
+                                const wb = isNaN(r.waterBalance) ? 0 : r.waterBalance;
                                 const wbColor = wb < -10 ? C.disaster : wb < 0 ? C.gold : C.agri;
-                                const pct     = Math.min(100, Math.max(0, 50 + wb * 2));
+                                const pct = Math.min(100, Math.max(0, 50 + wb * 2));
                                 return _bar(r.name, pct, `${wb > 0 ? '+' : ''}${wb} mm`, wbColor);
                             }).join('')}
                         </div>
                         <div class="ei-infobox" style="--accent:${C.agri};--accentRgb:74,222,128">
-                            Water balance = 7-day precipitation − evapotranspiration.
-                            Negative = deficit (irrigation may be needed). Positive = surplus.
+                            Water balance = 7-day precipitation − evapotranspiration (ET₀).
+                            Negative = deficit (irrigation needed). Positive = surplus.
                         </div>
                     </div>
                 </div>
-            </div>
+            </div>`}
 
             <!-- API source note -->
-            <div class="ei-card" style="border-color:rgba(74,222,128,.15);background:rgba(74,222,128,.03)">
+            <div class="ei-card" style="border-color:rgba(74,222,128,.15);background:rgba(74,222,128,.03);margin-top:16px">
                 <div style="font-size:.78rem;color:${C.muted};line-height:1.8">
-                    <strong style="color:${C.agri}">📡 Agriculture Data Sources</strong><br>
-                    <strong>Soil moisture & ET₀:</strong> Open-Meteo (free, no key) — ERA5/ECMWF reanalysis · Updated 2×/day<br>
-                    <strong>NDVI (vegetation):</strong> Derived from soil moisture + precip balance (proxy) — for true NDVI satellite data integrate <em>Agromonitoring API</em> (free tier available) or <em>NASA AppEEARS</em><br>
-                    <strong>Crop risk index:</strong> Computed from VPD, soil moisture deficit, and water balance thresholds<br>
-                    <strong>Fire-to-deforestation proxy:</strong> NASA FIRMS VIIRS thermal anomalies
+                    <strong style="color:${C.agri}">📡 Agriculture Data Sources (all free)</strong><br>
+                    <strong>Soil moisture & ET₀:</strong> Open-Meteo — ERA5/ECMWF reanalysis, no key needed<br>
+                    <strong>VPD (crop heat stress):</strong> Open-Meteo <code>vapor_pressure_deficit_max</code> daily variable<br>
+                    <strong>For true NDVI:</strong> Sign up at <em>agromonitoring.com</em> (free tier) or use <em>NASA AppEEARS</em><br>
+                    <strong>For crop disease risk:</strong> <em>appsforagri.com</em> — AgroWeather API
                 </div>
             </div>
         </div>`;

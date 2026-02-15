@@ -1316,6 +1316,7 @@ const PLANET_DATA = [
 // Solar system rendering code (kept from original)
 let _solarScene, _solarCamera, _solarRenderer, _solarPlanets = [], _solarRaf = null;
 let _solarRaycaster, _solarMouse;
+let _planetGlowMeshes = [];
 let _isDragging = false, _prevMX = 0, _prevMY = 0, _moved = false;
 let _camTheta = 0.5, _camPhi = 0.42, _camR = 90;
 let _solarClock, _sunMesh, _sunGlowMeshes = [], _sunCorona, _nebulaParticles;
@@ -1482,66 +1483,74 @@ function _buildSun() {
     sunCanvas.width = 512; sunCanvas.height = 512;
     const sunCtx = sunCanvas.getContext('2d');
     const gradient = sunCtx.createRadialGradient(256, 256, 0, 256, 256, 256);
-    gradient.addColorStop(0, '#fffae0');
-    gradient.addColorStop(0.5, '#fff5c0');
-    gradient.addColorStop(1, '#ffdd80');
+    gradient.addColorStop(0,   '#fffef0');
+    gradient.addColorStop(0.3, '#fff8d0');
+    gradient.addColorStop(0.7, '#ffdd80');
+    gradient.addColorStop(1,   '#ff9910');
     sunCtx.fillStyle = gradient;
     sunCtx.fillRect(0, 0, 512, 512);
-    for (let i = 0; i < 25; i++) {
-        const x = Math.random() * 512;
-        const y = Math.random() * 512;
-        const size = 5 + Math.random() * 15;
-        sunCtx.fillStyle = `rgba(200, 150, 50, ${0.3 + Math.random() * 0.3})`;
-        sunCtx.beginPath();
-        sunCtx.arc(x, y, size, 0, Math.PI * 2);
-        sunCtx.fill();
+    for (let i = 0; i < 30; i++) {
+        const x = Math.random() * 512, y = Math.random() * 512;
+        sunCtx.fillStyle = `rgba(180,100,30,${0.25 + Math.random() * 0.3})`;
+        sunCtx.beginPath(); sunCtx.arc(x, y, 5 + Math.random() * 14, 0, Math.PI * 2); sunCtx.fill();
     }
     const sunTexture = new THREE.CanvasTexture(sunCanvas);
-    
+
     _sunMesh = new THREE.Mesh(
-        new THREE.SphereGeometry(3.5, 64, 64), 
-        new THREE.MeshBasicMaterial({ map: sunTexture, color: 0xfff5c0 })
+        new THREE.SphereGeometry(3.5, 64, 64),
+        new THREE.MeshBasicMaterial({ map: sunTexture })
     );
     _solarScene.add(_sunMesh);
-    
+
+    // 8-layer corona for rich solar glow
     _sunGlowMeshes = [
-        [4.0, .28, 0xffe070],
-        [4.8, .18, 0xffb030],
-        [6.2, .12, 0xff9920],
-        [8.5, .08, 0xff7700],
-        [12, .05, 0xff5500],
-        [17, .03, 0xff3300]
+        [4.2,  0.55, 0xfff5a0],
+        [5.2,  0.38, 0xffdd44],
+        [7.0,  0.26, 0xffb822],
+        [9.5,  0.18, 0xff9910],
+        [13,   0.12, 0xff7700],
+        [18,   0.08, 0xff5500],
+        [26,   0.05, 0xff3300],
+        [38,   0.025,0xff2200],
     ].map(([r, opacity, color]) => {
         const m = new THREE.Mesh(
-            new THREE.SphereGeometry(r, 32, 32), 
-            new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.BackSide, depthWrite: false, blending: THREE.AdditiveBlending })
+            new THREE.SphereGeometry(r, 32, 32),
+            new THREE.MeshBasicMaterial({
+                color, transparent: true, opacity,
+                side: THREE.BackSide, depthWrite: false,
+                blending: THREE.AdditiveBlending
+            })
         );
-        _solarScene.add(m); 
+        _solarScene.add(m);
         return m;
     });
-    
+
     _sunCorona = new THREE.Mesh(
-        new THREE.RingGeometry(3.8, 10, 256), 
-        new THREE.MeshBasicMaterial({ color: 0xffcc44, transparent: true, opacity: .08, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending })
+        new THREE.RingGeometry(4.0, 14, 256),
+        new THREE.MeshBasicMaterial({
+            color: 0xffcc44, transparent: true, opacity: 0.10,
+            side: THREE.DoubleSide, depthWrite: false,
+            blending: THREE.AdditiveBlending
+        })
     );
-    _sunCorona.rotation.x = Math.PI/2; 
+    _sunCorona.rotation.x = Math.PI / 2;
     _solarScene.add(_sunCorona);
-    
-    const mainLight = new THREE.PointLight(0xfff8e0, 6.0, 0);
+
+    const mainLight = new THREE.PointLight(0xfff8e0, 7.0, 0);
     mainLight.castShadow = true;
     mainLight.shadow.mapSize.width = 2048;
     mainLight.shadow.mapSize.height = 2048;
     _solarScene.add(mainLight);
-    
-    const fillLight = new THREE.PointLight(0xffaa44, 1.5, 0);
-    fillLight.position.set(-50, 30, -30);
+
+    const fillLight = new THREE.PointLight(0xffaa44, 2.0, 0);
+    fillLight.position.set(-60, 40, -40);
     _solarScene.add(fillLight);
-    
-    const rimLight = new THREE.DirectionalLight(0x88aaff, 0.3);
+
+    const rimLight = new THREE.DirectionalLight(0x88aaff, 0.4);
     rimLight.position.set(-1, 0.5, -1);
     _solarScene.add(rimLight);
-    
-    _solarScene.add(new THREE.AmbientLight(0x1a2233, 0.4));
+
+    _solarScene.add(new THREE.AmbientLight(0x1a2233, 0.5));
 }
 
 function _noise(x, y, seed = 0) {
@@ -1648,57 +1657,193 @@ function _generateBumpMap(planet, size = 1024) {
     return new THREE.CanvasTexture(canvas);
 }
 
+function _addPlanetGlow(planetMesh, radius, hexColor, glowOpacity = 0.35) {
+    const color = new THREE.Color(hexColor);
+    const glowMeshes = [];
+
+    // Layer 1 — tight atmospheric halo
+    const halo1 = new THREE.Mesh(
+        new THREE.SphereGeometry(radius * 1.18, 32, 32),
+        new THREE.MeshBasicMaterial({
+            color, transparent: true,
+            opacity: glowOpacity * 0.9,
+            side: THREE.BackSide, depthWrite: false,
+            blending: THREE.AdditiveBlending,
+        })
+    );
+    planetMesh.add(halo1);
+    glowMeshes.push({ mesh: halo1, baseOpacity: glowOpacity * 0.9, phase: Math.random() * Math.PI * 2, speed: 0.8 + Math.random() * 0.4 });
+
+    // Layer 2 — medium diffuse glow
+    const halo2 = new THREE.Mesh(
+        new THREE.SphereGeometry(radius * 1.55, 24, 24),
+        new THREE.MeshBasicMaterial({
+            color, transparent: true,
+            opacity: glowOpacity * 0.45,
+            side: THREE.BackSide, depthWrite: false,
+            blending: THREE.AdditiveBlending,
+        })
+    );
+    planetMesh.add(halo2);
+    glowMeshes.push({ mesh: halo2, baseOpacity: glowOpacity * 0.45, phase: Math.random() * Math.PI * 2 + 1, speed: 0.5 + Math.random() * 0.3 });
+
+    // Layer 3 — wide outer corona
+    const halo3 = new THREE.Mesh(
+        new THREE.SphereGeometry(radius * 2.4, 24, 24),
+        new THREE.MeshBasicMaterial({
+            color, transparent: true,
+            opacity: glowOpacity * 0.18,
+            side: THREE.BackSide, depthWrite: false,
+            blending: THREE.AdditiveBlending,
+        })
+    );
+    planetMesh.add(halo3);
+    glowMeshes.push({ mesh: halo3, baseOpacity: glowOpacity * 0.18, phase: Math.random() * Math.PI * 2 + 2, speed: 0.3 + Math.random() * 0.2 });
+
+    return glowMeshes;
+}
+
 function _buildPlanets() {
+    _planetGlowMeshes = [];
+
     _solarPlanets = PLANET_DATA.map(p => {
-        const oRing = new THREE.Mesh(new THREE.RingGeometry(p.orbit-.05,p.orbit+.05,256), new THREE.MeshBasicMaterial({color:0x334466,transparent:true,opacity:.18,side:THREE.DoubleSide}));
-        oRing.rotation.x = -Math.PI/2; _solarScene.add(oRing);
-        const pivot = new THREE.Group(); pivot.userData.angle = Math.random()*Math.PI*2; _solarScene.add(pivot);
-        
+        // Orbit ring
+        const oRing = new THREE.Mesh(
+            new THREE.RingGeometry(p.orbit - 0.05, p.orbit + 0.05, 256),
+            new THREE.MeshBasicMaterial({ color: 0x334466, transparent: true, opacity: 0.18, side: THREE.DoubleSide })
+        );
+        oRing.rotation.x = -Math.PI / 2;
+        _solarScene.add(oRing);
+
+        const pivot = new THREE.Group();
+        pivot.userData.angle = Math.random() * Math.PI * 2;
+        _solarScene.add(pivot);
+
         const diffuseTexture = _generatePlanetTexture(p, 1024);
-        const bumpTexture = _generateBumpMap(p, 1024);
-        
+        const bumpTexture    = _generateBumpMap(p, 1024);
+
+        // Material with boosted emissive for self-lit glow feel
         const material = new THREE.MeshStandardMaterial({
-            map: diffuseTexture,
-            bumpMap: bumpTexture,
-            bumpScale: p.bumpScale ?? 0.02,
-            color: new THREE.Color(p.col),
-            emissive: new THREE.Color(p.emissive||'#000'),
-            emissiveIntensity: p.emissiveIntensity ?? 0.35,
-            roughness: p.rough ?? .75,
-            metalness: p.metal ?? .05,
+            map:               diffuseTexture,
+            bumpMap:           bumpTexture,
+            bumpScale:         p.bumpScale ?? 0.025,
+            color:             new THREE.Color(p.col),
+            emissive:          new THREE.Color(p.glowCol || p.emissive || '#000'),
+            emissiveIntensity: (p.emissiveIntensity ?? 0.35) * 2.2,
+            roughness:         p.rough ?? 0.72,
+            metalness:         p.metal ?? 0.05,
         });
-        
+
         const mesh = new THREE.Mesh(new THREE.SphereGeometry(p.r, 96, 96), material);
-        mesh.position.x=p.orbit; mesh.receiveShadow=mesh.castShadow=true; mesh.userData.planet=p; pivot.add(mesh);
-        
+        mesh.position.x = p.orbit;
+        mesh.receiveShadow = mesh.castShadow = true;
+        mesh.userData.planet = p;
+        pivot.add(mesh);
+
+        // Per-planet colored point light — makes nearby space lit in planet's color
+        const pLight = new THREE.PointLight(
+            new THREE.Color(p.glowCol || p.col),
+            0.7,
+            p.orbit * 0.55
+        );
+        mesh.add(pLight);
+
+        // Multi-layer atmospheric glow
+        const glows = _addPlanetGlow(mesh, p.r, p.glowCol || p.col, p.glowOpacity ?? 0.3);
+        _planetGlowMeshes.push(...glows);
+
+        // Saturn rings — enhanced with glow overlay
         if (p.hasRings) {
             const rg = new THREE.Group();
             [
-                [1.45, 1.8, .55, 0xd4b87a],
-                [1.82, 2.2, .48, 0xc9a860],
-                [2.22, 2.6, .42, 0xb89850]
+                [1.42, 1.75, 0.62, 0xe8d090],
+                [1.77, 2.18, 0.52, 0xd4b870],
+                [2.20, 2.65, 0.42, 0xc0a050],
+                [2.67, 3.10, 0.22, 0xc8a850],
             ].forEach(([i, o, op, col]) => {
-                const ringMesh = new THREE.Mesh(
-                    new THREE.RingGeometry(p.r*i, p.r*o, 256), 
+                rg.add(new THREE.Mesh(
+                    new THREE.RingGeometry(p.r * i, p.r * o, 256),
                     new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: op, side: THREE.DoubleSide })
-                );
-                rg.add(ringMesh);
+                ));
             });
-            rg.rotation.x = Math.PI/3.5; 
+            // Soft ring glow halo
+            rg.add(new THREE.Mesh(
+                new THREE.RingGeometry(p.r * 1.3, p.r * 3.3, 128),
+                new THREE.MeshBasicMaterial({
+                    color: 0xf0d880, transparent: true, opacity: 0.09,
+                    side: THREE.DoubleSide, depthWrite: false,
+                    blending: THREE.AdditiveBlending
+                })
+            ));
+            rg.rotation.x = Math.PI / 3.5;
             mesh.add(rg);
         }
-        
+
+        // Earth: thick atmosphere rim + clouds
         if (p.isEarth) {
+            mesh.add(new THREE.Mesh(
+                new THREE.SphereGeometry(p.r * 1.055, 64, 64),
+                new THREE.MeshBasicMaterial({
+                    color: 0x3399ff, transparent: true, opacity: 0.16,
+                    side: THREE.BackSide, depthWrite: false,
+                    blending: THREE.AdditiveBlending
+                })
+            ));
             const clouds = new THREE.Mesh(
-                new THREE.SphereGeometry(p.r*1.01, 128, 128), 
-                new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.15 })
+                new THREE.SphereGeometry(p.r * 1.012, 128, 128),
+                new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.13 })
             );
             clouds.raycast = () => {};
-            mesh.add(clouds); 
+            mesh.add(clouds);
         }
-        
-        return { mesh, pivot, data:p };
+
+        return { mesh, pivot, data: p };
     });
+}
+
+
+// ── REPLACEMENT 3: _solarLoop() ───────────────────────────────────────────
+function _solarLoop() {
+    _solarRaf = requestAnimationFrame(_solarLoop);
+    const dt = _solarClock.getDelta();
+
+    // Planets rotate + orbit
+    _solarPlanets.forEach(({ pivot, mesh, data }) => {
+        pivot.userData.angle += data.spd * dt * 0.25;
+        pivot.rotation.y = pivot.userData.angle;
+        mesh.rotation.y += 0.14 * dt;
+    });
+
+    // Animate planet glow pulsing — each layer breathes at its own rate
+    const t = Date.now() * 0.001;
+    _planetGlowMeshes.forEach(g => {
+        const pulse = 1 + Math.sin(t * g.speed + g.phase) * 0.12;
+        g.mesh.material.opacity = g.baseOpacity * pulse;
+    });
+
+    // Sun animation
+    if (_sunMesh) {
+        const s = 1 + Math.sin(Date.now() * 0.0018) * 0.022;
+        _sunMesh.scale.set(s, s, s);
+        _sunMesh.rotation.y += 0.05 * dt;
+
+        _sunGlowMeshes.forEach((g, i) => {
+            const sp = 1 + Math.sin(Date.now() * (0.0007 + i * 0.0003) + i) * 0.05;
+            g.scale.set(sp, sp, sp);
+        });
+
+        if (_sunCorona) _sunCorona.rotation.z += 0.008 * dt;
+    }
+
+    if (_nebulaParticles) _nebulaParticles.rotation.y += 0.002 * dt;
+
+    if (!_isDragging) _camTheta += 0.03 * dt;
+    _solarCamera.position.x = _camR * Math.sin(_camPhi) * Math.sin(_camTheta);
+    _solarCamera.position.y = _camR * Math.cos(_camPhi);
+    _solarCamera.position.z = _camR * Math.sin(_camPhi) * Math.cos(_camTheta);
+    _solarCamera.lookAt(0, 0, 0);
+
+    _solarRenderer.render(_solarScene, _solarCamera);
 }
 
 function _setupSolarControls(canvas) {
