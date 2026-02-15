@@ -698,6 +698,181 @@ app.get('/api/iss', async (req, res) => {
     }
 });
 
+// PASTE THIS AT THE END OF YOUR proxyServer.js (before app.listen())
+// Add this section after line 715, before the app.listen() call
+
+// ============= NASA FIRMS FIRE DATA PROXY =============
+
+app.get('/api/firms/active-fires', async (req, res) => {
+    try {
+        const { source = 'MODIS_NRT', area = 'world', days = 1 } = req.query;
+        
+        // Get NASA FIRMS API key from environment
+        const firmsKey = process.env.NASA_FIRMS_KEY;
+        
+        if (!firmsKey) {
+            console.warn('NASA FIRMS API key not configured, using mock data');
+            return res.json(getMockFireData());
+        }
+        
+        // Cache key
+        const cacheKey = `firms-${source}-${area}-${days}`;
+        
+        // Check cache (FIRMS updates every 3 hours)
+        if (cache.has(cacheKey)) {
+            const { data, timestamp } = cache.get(cacheKey);
+            if (Date.now() - timestamp < 3 * 60 * 60 * 1000) { // 3 hour cache
+                console.log(`[Cache] FIRMS data served from cache`);
+                return res.json(data);
+            }
+        }
+        
+        // Build FIRMS API URL
+        // Format: https://firms.modaps.eosdis.nasa.gov/api/area/csv/{MAP_KEY}/{source}/{area}/{dayrange}
+        const url = `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${firmsKey}/${source}/${area}/${days}`;
+        
+        console.log(`[FIRMS] Fetching fire data: ${source}, ${area}, ${days} days`);
+        
+        const response = await axios.get(url, {
+            timeout: 30000,
+            headers: {
+                'Accept': 'text/csv',
+                'User-Agent': 'AstroView/1.0'
+            }
+        });
+        
+        // Parse CSV response
+        const csvData = response.data;
+        const fires = parseCSV(csvData);
+        
+        // Process and aggregate data
+        const firesByCountry = {};
+        const firesByConfidence = { low: 0, nominal: 0, high: 0 };
+        const firesByType = {};
+        
+        fires.forEach(fire => {
+            // Country aggregation
+            const country = fire.country || 'Unknown';
+            firesByCountry[country] = (firesByCountry[country] || 0) + 1;
+            
+            // Confidence aggregation
+            const confidence = parseFloat(fire.confidence || 0);
+            if (confidence < 50) firesByConfidence.low++;
+            else if (confidence < 80) firesByConfidence.nominal++;
+            else firesByConfidence.high++;
+            
+            // Type aggregation (based on brightness)
+            const brightness = parseFloat(fire.bright_ti4 || fire.brightness || 0);
+            if (brightness > 400) {
+                firesByType.intense = (firesByType.intense || 0) + 1;
+            } else if (brightness > 350) {
+                firesByType.large = (firesByType.large || 0) + 1;
+            } else {
+                firesByType.moderate = (firesByType.moderate || 0) + 1;
+            }
+        });
+        
+        const result = {
+            success: true,
+            data: {
+                total: fires.length,
+                byCountry: firesByCountry,
+                byConfidence: firesByConfidence,
+                byType: firesByType,
+                recent: fires.slice(0, 100), // Return 100 most recent
+                source: `NASA FIRMS (${source})`,
+                lastUpdated: new Date().toISOString(),
+                queryParams: { source, area, days }
+            }
+        };
+        
+        // Cache the result
+        cache.set(cacheKey, { data: result, timestamp: Date.now() });
+        console.log(`[FIRMS] Successfully fetched ${fires.length} active fires`);
+        
+        res.json(result);
+        
+    } catch (error) {
+        console.error('FIRMS API error:', error.message);
+        
+        // Return mock data on error
+        res.json(getMockFireData());
+    }
+});
+
+// Helper function to parse CSV
+function parseCSV(csvText) {
+    const lines = csvText.trim().split('\n');
+    if (lines.length === 0) return [];
+    
+    const headers = lines[0].split(',').map(h => h.trim());
+    const fires = [];
+    
+    for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',');
+        const fire = {};
+        
+        headers.forEach((header, index) => {
+            fire[header.toLowerCase()] = values[index]?.trim() || '';
+        });
+        
+        fires.push(fire);
+    }
+    
+    return fires;
+}
+
+// Mock fire data generator
+function getMockFireData() {
+    const mockFires = [];
+    const countries = [
+        { name: 'USA', lat: 37.0, lon: -120.0, count: 245 },
+        { name: 'Brazil', lat: -10.0, lon: -55.0, count: 189 },
+        { name: 'Canada', lat: 56.0, lon: -106.0, count: 156 },
+        { name: 'Russia', lat: 61.0, lon: 105.0, count: 134 },
+        { name: 'Australia', lat: -25.0, lon: 133.0, count: 98 },
+        { name: 'Indonesia', lat: -2.5, lon: 118.0, count: 76 },
+        { name: 'Congo', lat: -4.0, lon: 21.0, count: 65 },
+        { name: 'India', lat: 20.0, lon: 77.0, count: 54 }
+    ];
+    
+    countries.forEach(country => {
+        for (let i = 0; i < country.count; i++) {
+            const latOffset = (Math.random() - 0.5) * 20;
+            const lonOffset = (Math.random() - 0.5) * 20;
+            
+            mockFires.push({
+                latitude: (country.lat + latOffset).toFixed(4),
+                longitude: (country.lon + lonOffset).toFixed(4),
+                brightness: (300 + Math.random() * 150).toFixed(1),
+                confidence: (50 + Math.random() * 50).toFixed(0),
+                acq_date: new Date().toISOString().split('T')[0],
+                acq_time: String(Math.floor(Math.random() * 2400)).padStart(4, '0'),
+                country: country.name
+            });
+        }
+    });
+    
+    const firesByCountry = {};
+    countries.forEach(c => firesByCountry[c.name] = c.count);
+    
+    return {
+        success: true,
+        data: {
+            total: mockFires.length,
+            byCountry: firesByCountry,
+            byConfidence: { low: 234, nominal: 567, high: 416 },
+            byType: { moderate: 489, large: 512, intense: 216 },
+            recent: mockFires.slice(0, 100),
+            source: 'NASA FIRMS (Mock Data)',
+            lastUpdated: new Date().toISOString(),
+            queryParams: { source: 'MODIS_NRT', area: 'world', days: 1 }
+        }
+    };
+}
+
+// ============= END FIRMS PROXY =============
+
 app.get('/api/iss-pass', async (req, res) => {
     try {
         const { lat, lon } = req.query;

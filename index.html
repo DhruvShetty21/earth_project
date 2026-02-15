@@ -197,6 +197,10 @@
                 </div>
             </div>
 
+            <div id="rate-limit-status" 
+     style="position: fixed; bottom: 20px; right: 20px; z-index: 9999;">
+</div>
+
             <!-- Footer Note -->
             <div class="info-box green">
                 ✅ Earth is the only planet with confirmed life, a breathable atmosphere, and liquid water on its surface. Over 8,000 active satellites continuously monitor and protect our home planet.
@@ -271,6 +275,9 @@
         components/* depends on everything → load fifth
         app.js depends on everything → load last
     -->
+
+    <script src="ui/RateLimitIndicator.js"></script>
+
     <script src="engine/simplifier.js"></script>
     <script src="engine/riskCalculator.js"></script>
     <script src="engine/visibilityScore.js"></script>
@@ -283,6 +290,7 @@
     <script src="services/n2yoService.js"></script>
     <script src="services/launchService.js"></script>
     <script src="services/neoVisualization.js"></script>
+    <script src="services/firmsService.js"></script>
     
     <script src="hooks/useISSPosition.js"></script>
     <script src="hooks/useNASAData.js"></script>
