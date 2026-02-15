@@ -32,6 +32,7 @@ const EarthImpact = (() => {
             earthquakes: null,
             loading: true
         },
+        neoData: null,
         airQuality: null,
         loading: true,
         error: null,
@@ -470,52 +471,61 @@ const EarthImpact = (() => {
     }
 
     // Fetch all data
-    async function refreshAllData() {
-        _setState({ loading: true, error: null });
+    // Add to refreshAllData function
+async function refreshAllData() {
+    _setState({ loading: true, error: null });
 
-        try {
-            // Fetch climate data
-            const [tempRes, co2Res, iceRes] = await Promise.allSettled([
-                fetchTemperatureData(),
-                fetchCO2Data(),
-                fetchSeaIceData()
-            ]);
+    try {
+        // Fetch climate data
+        const [tempRes, co2Res, iceRes] = await Promise.allSettled([
+            fetchTemperatureData(),
+            fetchCO2Data(),
+            fetchSeaIceData()
+        ]);
 
-            const climateData = {
+        // Fetch disaster data
+        const [firesRes, quakesRes] = await Promise.allSettled([
+            fetchActiveFires(),
+            fetchEarthquakeData()
+        ]);
+
+        // Fetch NEO data from NASA
+        let neoData = null;
+        if (window.NasaService && window.NEOVisualization) {
+            try {
+                const neos = await NasaService.getUpcomingCloseApproaches(14);
+                const stats = NEOVisualization.calculateNEOStats(neos);
+                neoData = { neos, stats };
+            } catch (e) {
+                console.error('Failed to fetch NEO data:', e);
+            }
+        }
+
+        // Fetch air quality
+        const aqRes = await fetchAirQualityData();
+
+        _setState({
+            climateData: {
                 temperature: tempRes.status === 'fulfilled' && tempRes.value.data ? tempRes.value.data : null,
                 co2: co2Res.status === 'fulfilled' && co2Res.value.data ? co2Res.value.data : null,
                 seaIce: iceRes.status === 'fulfilled' && iceRes.value.data ? iceRes.value.data : null,
                 loading: false
-            };
-
-            // Fetch disaster data
-            const [firesRes, quakesRes] = await Promise.allSettled([
-                fetchActiveFires(),
-                fetchEarthquakeData()
-            ]);
-
-            const disasterData = {
+            },
+            disasterData: {
                 fires: firesRes.status === 'fulfilled' && firesRes.value.data ? firesRes.value.data : null,
                 earthquakes: quakesRes.status === 'fulfilled' && quakesRes.value.data ? quakesRes.value.data : null,
                 loading: false
-            };
-
-            // Fetch air quality
-            const aqRes = await fetchAirQualityData();
-            const airQuality = aqRes.data || null;
-
-            _setState({
-                climateData,
-                disasterData,
-                airQuality,
-                loading: false,
-                lastUpdated: new Date().toISOString()
-            });
-        } catch (err) {
-            console.error('Error refreshing data:', err);
-            _setState({ error: err.message, loading: false });
-        }
+            },
+            neoData,
+            airQuality: aqRes.data || null,
+            loading: false,
+            lastUpdated: new Date().toISOString()
+        });
+    } catch (err) {
+        console.error('Error refreshing data:', err);
+        _setState({ error: err.message, loading: false });
     }
+}
 
     // Start polling
     function startPolling(intervalMs = 30 * 60 * 1000) {

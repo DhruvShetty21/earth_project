@@ -94,22 +94,140 @@ const EarthImpactUI = {
         `;
     },
 
-    renderTabs: function(climateData, disasterData, airQuality) {
+    // Add to EarthImpactUI.js - add a new NEO tab
+
+// Add this to the renderTabs function
+renderTabs: function(climateData, disasterData, airQuality, neoData) {
+    return `
+        <div class="impact-tabs">
+            <div class="impact-tab-headers">
+                <button class="impact-tab-btn active" data-tab="climate">🌡️ Climate</button>
+                <button class="impact-tab-btn" data-tab="disasters">⚠️ Disasters</button>
+                <button class="impact-tab-btn" data-tab="neo">☄️ NEOs</button>
+                <button class="impact-tab-btn" data-tab="atmosphere">🌬️ Atmosphere</button>
+            </div>
+            <div class="impact-tab-content">
+                ${this.renderClimateTab(climateData)}
+                ${this.renderDisastersTab(disasterData)}
+                ${this.renderNEOTab(neoData)}
+                ${this.renderAtmosphereTab(airQuality)}
+            </div>
+        </div>
+    `;
+},
+
+// Add new NEOTab render function
+renderNEOTab: function(neoData) {
+    if (!neoData) {
         return `
-            <div class="impact-tabs">
-                <div class="impact-tab-headers">
-                    <button class="impact-tab-btn active" data-tab="climate">🌡️ Climate Monitoring</button>
-                    <button class="impact-tab-btn" data-tab="disasters">⚠️ Active Disasters</button>
-                    <button class="impact-tab-btn" data-tab="atmosphere">🌬️ Atmosphere</button>
-                </div>
-                <div class="impact-tab-content">
-                    ${this.renderClimateTab(climateData)}
-                    ${this.renderDisastersTab(disasterData)}
-                    ${this.renderAtmosphereTab(airQuality)}
+            <div class="impact-tab-pane" id="tab-neo">
+                <div class="impact-chart-card">
+                    <p style="color: var(--muted); text-align: center;">Loading NEO data...</p>
                 </div>
             </div>
         `;
-    },
+    }
+    
+    const stats = neoData.stats || {};
+    const hazardous = stats.hazardous || 0;
+    const total = stats.total || 0;
+    const closest = stats.closest || null;
+    const largest = stats.largest || null;
+    
+    return `
+        <div class="impact-tab-pane" id="tab-neo">
+            <!-- NEO Stats Grid -->
+            <div class="impact-stats-grid" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 20px;">
+                <div class="impact-stat-card" style="border-left-color: #3b82f6;">
+                    <div class="impact-stat-label">Total NEOs Tracked</div>
+                    <div class="impact-stat-value" style="color: #3b82f6;">${total}</div>
+                    <div class="impact-stat-source">Next 7 days</div>
+                </div>
+                <div class="impact-stat-card" style="border-left-color: #ef4444;">
+                    <div class="impact-stat-label">Potentially Hazardous</div>
+                    <div class="impact-stat-value" style="color: #ef4444;">${hazardous}</div>
+                    <div class="impact-stat-source">Requires monitoring</div>
+                </div>
+            </div>
+            
+            <!-- Closest Approach -->
+            ${closest ? `
+            <div class="impact-chart-card">
+                <h3 class="impact-chart-title">🛸 Closest Approach</h3>
+                <div style="display: flex; align-items: center; gap: 16px;">
+                    <div style="flex: 1;">
+                        <div style="font-size: 1.2rem; font-weight: 600; margin-bottom: 4px;">${closest.name}</div>
+                        <div style="color: var(--muted); font-size: 0.85rem;">Distance: ${closest.distance.toFixed(2)} lunar</div>
+                        <div style="color: var(--muted); font-size: 0.85rem;">Date: ${closest.date}</div>
+                    </div>
+                    <div style="
+                        width: 60px;
+                        height: 60px;
+                        border-radius: 50%;
+                        background: conic-gradient(#ef4444 0deg ${Math.max(0, 360 - closest.distance * 12)}deg, #3b82f6 ${Math.max(0, 360 - closest.distance * 12)}deg 360deg);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: 0.7rem;
+                        color: white;
+                    ">${closest.distance.toFixed(1)} LD</div>
+                </div>
+            </div>` : ''}
+            
+            <!-- Largest NEO -->
+            ${largest ? `
+            <div class="impact-chart-card">
+                <h3 class="impact-chart-title">📏 Largest Object</h3>
+                <div style="display: flex; align-items: center; gap: 16px;">
+                    <div style="flex: 1;">
+                        <div style="font-size: 1.2rem; font-weight: 600; margin-bottom: 4px;">${largest.name}</div>
+                        <div style="color: var(--muted); font-size: 0.85rem;">Diameter: ${largest.size.toFixed(0)} meters</div>
+                        <div style="color: var(--muted); font-size: 0.85rem;">Size class: ${largest.size > 1000 ? 'City-killer' : largest.size > 300 ? 'Regional' : 'Local'}</div>
+                    </div>
+                    <div style="
+                        width: 60px;
+                        height: 60px;
+                        border-radius: 50%;
+                        background: ${largest.size > 1000 ? '#ef4444' : largest.size > 300 ? '#f97316' : '#fbbf24'};
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: 0.7rem;
+                        color: white;
+                    ">${Math.round(largest.size)}m</div>
+                </div>
+            </div>` : ''}
+            
+            <!-- NEO Facts -->
+            <div class="impact-chart-card">
+                <h3 class="impact-chart-title">📊 NEO Facts</h3>
+                <ul style="list-style: none; padding: 0; margin: 0;">
+                    <li style="padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; gap: 8px;">
+                        <span style="color: var(--gold);">•</span>
+                        <span>NASA tracks over 28,000 near-Earth objects</span>
+                    </li>
+                    <li style="padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; gap: 8px;">
+                        <span style="color: var(--gold);">•</span>
+                        <span>About 1,000 are larger than 1 km in diameter</span>
+                    </li>
+                    <li style="padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; gap: 8px;">
+                        <span style="color: var(--gold);">•</span>
+                        <span>New NEOs are discovered daily by survey telescopes</span>
+                    </li>
+                    <li style="padding: 8px 0; display: flex; align-items: center; gap: 8px;">
+                        <span style="color: var(--gold);">•</span>
+                        <span>DART mission successfully tested asteroid deflection</span>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Source -->
+            <div style="margin-top: 16px; font-size: 0.7rem; color: var(--muted); text-align: center;">
+                📡 Source: NASA CNEOS / Near-Earth Object Program
+            </div>
+        </div>
+    `;
+},
 
     renderClimateTab: function(climateData) {
         const tempChart = this.generateTempChart(climateData.temperature);

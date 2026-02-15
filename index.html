@@ -219,7 +219,10 @@
         <div class="lrow"><span class="lname">☄ Asteroids (NEO)</span><button class="tog on" id="t-neo" onclick="toggleLayer('neo',this)"></button></div>
         <div class="lrow"><span class="lname">🌩 Solar Storms</span><button class="tog" id="t-cme" onclick="toggleLayer('cme',this)"></button></div>
         <div class="lrow"><span class="lname">🚀 Upcoming Launches</span><button class="tog" id="t-lnc" onclick="toggleLayer('launches',this)"></button></div>
+        <div class="lrow"><span class="lname">🛰️ Satellites Overhead</span><button class="tog" id="t-sat" onclick="toggleLayer('satellites',this)"></button></div>
     </div>
+
+    
 
     <!-- SIDE PANEL -->
     <div id="panel">
@@ -277,6 +280,9 @@
     <script src="services/cacheMiddleware.js"></script>
     <script src="services/nasaService.js"></script>
     <script src="services/weatherService.js"></script>
+    <script src="services/n2yoService.js"></script>
+    <script src="services/launchService.js"></script>
+    <script src="services/neoVisualization.js"></script>
     
     <script src="hooks/useISSPosition.js"></script>
     <script src="hooks/useNASAData.js"></script>

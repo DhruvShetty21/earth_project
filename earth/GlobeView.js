@@ -106,38 +106,62 @@ const GlobeView = (() => {
         refresh(data);
     }
 
-    function _buildPoints(data) {
-        const pts = [];
-        if (_layers.iss && data.iss) {
-            pts.push({
-                lat: data.iss.lat, lng: data.iss.lng,
-                color: '#ffd060', radius: 0.55, altitude: 0.055,
-                label: `🛸 ISS — ${data.iss.lat.toFixed(2)}°, ${data.iss.lng.toFixed(2)}° ${data.iss.live === false ? '(offline)' : '· LIVE'}`,
-                type: 'iss', raw: data.iss,
-            });
-        }
-        if (_layers.disasters && data.disasters) {
-            data.disasters.forEach(ev => {
-                const geo = ev.geometry?.[ev.geometry.length - 1];
-                if (!geo?.coordinates) return;
-                const [lng, lat] = geo.coordinates;
-                const cat = ev.categories?.[0]?.title || 'Unknown';
-                const s = Simplifier.category(cat);
-                pts.push({ lat, lng, color: s.color, radius: 0.38, altitude: 0.01, label: `${s.icon} ${ev.title}`, type: 'disaster', raw: ev, style: s, cat });
-            });
-        }
-        if (_layers.neo && data.neo) {
-            data.neo.slice(0, 25).forEach((a, i) => {
-                const s = Simplifier.asteroid(a);
-                pts.push({
-                    lat: ((i * 47) % 140) - 70, lng: ((i * 83) % 340) - 170,
-                    color: s.color, radius: a.is_potentially_hazardous_asteroid ? 0.45 : 0.28, altitude: 0.025,
-                    label: `☄ ${a.name} — ${s.proximity}`, type: 'neo', raw: a, style: s,
-                });
-            });
-        }
-        return pts;
+    // In GlobeView.js, update the _buildPoints function to use NEOVisualization
+
+function _buildPoints(data) {
+    const pts = [];
+    
+    // ISS
+    if (_layers.iss && data.iss) {
+        pts.push({
+            lat: data.iss.lat, lng: data.iss.lng,
+            color: '#ffd060', radius: 0.55, altitude: 0.055,
+            label: `🛸 ISS — ${data.iss.lat.toFixed(2)}°, ${data.iss.lng.toFixed(2)}° ${data.iss.live === false ? '(offline)' : '· LIVE'}`,
+            type: 'iss', raw: data.iss,
+        });
     }
+    
+    // Disasters
+    if (_layers.disasters && data.disasters) {
+        data.disasters.forEach(ev => {
+            const geo = ev.geometry?.[ev.geometry.length - 1];
+            if (!geo?.coordinates) return;
+            const [lng, lat] = geo.coordinates;
+            const cat = ev.categories?.[0]?.title || 'Unknown';
+            const s = Simplifier.category(cat);
+            pts.push({ 
+                lat, lng, color: s.color, radius: 0.38, altitude: 0.01, 
+                label: `${s.icon} ${ev.title}`, type: 'disaster', raw: ev, style: s, cat 
+            });
+        });
+    }
+    
+    // NEOs - Using NEOVisualization
+    if (_layers.neo && data.neo && window.NEOVisualization) {
+        const neoPoints = NEOVisualization.neoToGlobePoints(data.neo, 50);
+        pts.push(...neoPoints);
+    }
+    
+    // Launches
+    if (_layers.launches && data.launches) {
+        data.launches.forEach(launch => {
+            if (launch.enhanced?.coordinates) {
+                pts.push({
+                    lat: launch.enhanced.coordinates.lat,
+                    lng: launch.enhanced.coordinates.lng,
+                    color: launch.enhanced.status?.color || '#f97316',
+                    radius: 0.35,
+                    altitude: 0.02,
+                    label: `🚀 ${launch.name || 'Launch'}`,
+                    type: 'launch',
+                    raw: launch
+                });
+            }
+        });
+    }
+    
+    return pts;
+}
 
     function _buildRings(data) {
         if (!_layers.disasters || !data.disasters) return [];
@@ -161,9 +185,97 @@ const GlobeView = (() => {
         return labels;
     }
 
+    // Add to GlobeView.js - inside the return object
+
+function updateSatellites(satellitePoints) {
+    if (!_globe) return;
+    
+    // Store satellite points separately
+    _satellitePoints = satellitePoints;
+    
+    // Merge with existing points data
+    const currentPoints = _globe.pointsData() || [];
+    const nonSatellitePoints = currentPoints.filter(p => p.type !== 'satellite');
+    _globe.pointsData([...nonSatellitePoints, ...satellitePoints]);
+}
+
+function clearLayer(layerName) {
+    if (!_globe) return;
+    
+    if (layerName === 'satellites') {
+        const currentPoints = _globe.pointsData() || [];
+        const filteredPoints = currentPoints.filter(p => p.type !== 'satellite');
+        _globe.pointsData(filteredPoints);
+    }
+}
+
+function getViewCenter() {
+    if (!_globe) return { lat: 0, lng: 0 };
+    // Get camera target or return default
+    const controls = _globe.controls();
+    if (controls && controls.target) {
+        return {
+            lat: controls.target.lat || 0,
+            lng: controls.target.lng || 0
+        };
+    }
+    return { lat: 0, lng: 0 };
+}
+
+let _launchPoints = [];
+
+function updateLaunches(launchData) {
+    if (!_globe) return;
+    
+    // Convert launches to globe points
+    _launchPoints = launchData.map(launch => {
+        const enhanced = launch.enhanced || {};
+        const coordinates = enhanced.coordinates || launch.pad;
+        if (!coordinates?.lat || !coordinates?.lng) return null;
+        
+        return {
+            lat: coordinates.lat,
+            lng: coordinates.lng,
+            altitude: 0.02,
+            radius: 0.35,
+            color: enhanced.status?.color || '#f97316',
+            label: `🚀 ${launch.name || 'Launch'} - ${enhanced.daysUntil > 0 ? LaunchService.formatLaunchDate(launch.net) : enhanced.status?.name}`,
+            type: 'launch',
+            raw: launch
+        };
+    }).filter(Boolean);
+    
+    // Merge with existing points
+    const currentPoints = _globe.pointsData() || [];
+    const nonLaunchPoints = currentPoints.filter(p => p.type !== 'launch');
+    _globe.pointsData([...nonLaunchPoints, ..._launchPoints]);
+}
+
+function clearLaunches() {
+    if (!_globe) return;
+    const currentPoints = _globe.pointsData() || [];
+    const filteredPoints = currentPoints.filter(p => p.type !== 'launch');
+    _globe.pointsData(filteredPoints);
+    _launchPoints = [];
+}
+
+
+
+
     function isReady() { return !!_globe; }
 
-    return { init, refresh, updateISS, setLayer, isReady };
+    return {
+    init,
+    refresh,
+    updateISS,
+    setLayer,
+    updateSatellites,
+    updateLaunches,
+    clearLaunches,
+    clearLayer,
+    getViewCenter,
+    isReady
+};
 })();
 
 window.GlobeView = GlobeView;

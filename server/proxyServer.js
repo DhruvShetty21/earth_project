@@ -272,6 +272,247 @@ async function fetchSpaceDevsEvents(limit = 50, daysAhead = 90) {
     }
 }
 
+// server/proxyServer.js - Add these new endpoints
+
+// ============= N2YO API INTEGRATION =============
+
+// N2YO API configuration
+const N2YO_API_KEY = process.env.N2YO_API_KEY || ''; // Add to your .env file
+
+// Satellite categories from N2YO
+const SATELLITE_CATEGORIES = {
+    0: 'All',
+    1: 'Amateur',
+    2: 'CubeSat',
+    3: 'Education',
+    4: 'Engineering',
+    5: 'Galileo',
+    6: 'GLO-OPS',
+    7: 'GPS-OPS',
+    8: 'Military',
+    9: 'Radar',
+    10: 'Resource',
+    11: 'SARSAT',
+    12: 'Science',
+    13: 'TDRSS',
+    14: 'Weather',
+    15: 'XM/Sirius',
+    16: 'Iridium-NEXT',
+    17: 'Globalstar',
+    18: 'Intelsat',
+    19: 'SES',
+    20: 'Telesat',
+    21: 'Orbcomm',
+    22: 'Gorizont',
+    23: 'Raduga',
+    24: 'Molniya',
+    25: 'DMC',
+    26: 'Argos',
+    27: 'Planet',
+    28: 'Spire',
+    29: 'Starlink',
+    30: 'OneWeb'
+};
+
+// Common satellite NORAD IDs
+const POPULAR_SATELLITES = {
+    ISS: 25544,
+    HUBBLE: 20580,
+    Tiangong: 48274,
+    'NOAA-20': 43013,
+    'GOES-16': 41866,
+    'GPS BIIF-2': 24876,
+    'Starlink-1000': 44713,
+    'OneWeb-0001': 44056,
+    'Iridium-101': 41918,
+    'Landsat-8': 39084,
+    'Sentinel-2A': 40697,
+    'Aqua': 27424,
+    'Terra': 25994,
+    'CALIPSO': 29108,
+    'CloudSat': 29107
+};
+
+// Get satellites above a location
+app.get('/api/n2yo/above', async (req, res) => {
+    try {
+        const { lat, lon, radius = 45, category = 0 } = req.query;
+        
+        if (!lat || !lon) {
+            return res.status(400).json({ error: 'Latitude and longitude required' });
+        }
+        
+        if (!N2YO_API_KEY) {
+            return res.status(400).json({ error: 'N2YO API key not configured' });
+        }
+
+        const cacheKey = `n2yo-above-${lat}-${lon}-${radius}-${category}`;
+        if (cache.has(cacheKey)) {
+            const { data, timestamp } = cache.get(cacheKey);
+            if (Date.now() - timestamp < 5 * 60 * 1000) { // 5 min cache
+                return res.json(data);
+            }
+        }
+
+        const url = `https://api.n2yo.com/rest/v1/satellite/above/${lat}/${lon}/${radius}/${category}/&apiKey=${N2YO_API_KEY}`;
+        const response = await axios.get(url);
+        
+        cache.set(cacheKey, { data: response.data, timestamp: Date.now() });
+        res.json(response.data);
+    } catch (error) {
+        console.error('N2YO above error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get visual passes for a satellite
+app.get('/api/n2yo/visual-passes', async (req, res) => {
+    try {
+        const { id, lat, lon, days = 7, min_elevation = 10 } = req.query;
+        
+        if (!id || !lat || !lon) {
+            return res.status(400).json({ error: 'Satellite ID, latitude, and longitude required' });
+        }
+        
+        if (!N2YO_API_KEY) {
+            return res.status(400).json({ error: 'N2YO API key not configured' });
+        }
+
+        const cacheKey = `n2yo-visual-${id}-${lat}-${lon}-${days}`;
+        if (cache.has(cacheKey)) {
+            const { data, timestamp } = cache.get(cacheKey);
+            if (Date.now() - timestamp < 30 * 60 * 1000) { // 30 min cache
+                return res.json(data);
+            }
+        }
+
+        const url = `https://api.n2yo.com/rest/v1/satellite/visualpasses/${id}/${lat}/${lon}/0/${days}/${min_elevation}/&apiKey=${N2YO_API_KEY}`;
+        const response = await axios.get(url);
+        
+        cache.set(cacheKey, { data: response.data, timestamp: Date.now() });
+        res.json(response.data);
+    } catch (error) {
+        console.error('N2YO visual passes error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get radio passes for a satellite
+app.get('/api/n2yo/radio-passes', async (req, res) => {
+    try {
+        const { id, lat, lon, days = 7, min_elevation = 10 } = req.query;
+        
+        if (!id || !lat || !lon) {
+            return res.status(400).json({ error: 'Satellite ID, latitude, and longitude required' });
+        }
+
+        const url = `https://api.n2yo.com/rest/v1/satellite/radiopasses/${id}/${lat}/${lon}/0/${days}/${min_elevation}/&apiKey=${N2YO_API_KEY}`;
+        const response = await axios.get(url);
+        
+        res.json(response.data);
+    } catch (error) {
+        console.error('N2YO radio passes error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get satellite positions (for real-time tracking)
+app.get('/api/n2yo/positions', async (req, res) => {
+    try {
+        const { id, lat, lon, seconds = 60 } = req.query;
+        
+        if (!id || !lat || !lon) {
+            return res.status(400).json({ error: 'Satellite ID, latitude, and longitude required' });
+        }
+
+        const url = `https://api.n2yo.com/rest/v1/satellite/positions/${id}/${lat}/${lon}/0/${seconds}/&apiKey=${N2YO_API_KEY}`;
+        const response = await axios.get(url);
+        
+        res.json(response.data);
+    } catch (error) {
+        console.error('N2YO positions error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get TLE data for a satellite
+app.get('/api/n2yo/tle', async (req, res) => {
+    try {
+        const { id } = req.query;
+        
+        if (!id) {
+            return res.status(400).json({ error: 'Satellite ID required' });
+        }
+
+        const url = `https://api.n2yo.com/rest/v1/satellite/tle/${id}/&apiKey=${N2YO_API_KEY}`;
+        const response = await axios.get(url);
+        
+        res.json(response.data);
+    } catch (error) {
+        console.error('N2YO TLE error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Search satellites by name
+app.get('/api/n2yo/search', async (req, res) => {
+    try {
+        const { query } = req.query;
+        
+        if (!query) {
+            return res.status(400).json({ error: 'Search query required' });
+        }
+
+        // N2YO doesn't have a direct search endpoint, so we'll return popular matches
+        const matches = [];
+        const lowerQuery = query.toLowerCase();
+        
+        for (const [name, id] of Object.entries(POPULAR_SATELLITES)) {
+            if (name.toLowerCase().includes(lowerQuery)) {
+                matches.push({ name, id, category: SATELLITE_CATEGORIES[getCategoryForSatellite(id)] });
+            }
+        }
+        
+        res.json({ matches });
+    } catch (error) {
+        console.error('N2YO search error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get satellite categories
+app.get('/api/n2yo/categories', (req, res) => {
+    res.json(SATELLITE_CATEGORIES);
+});
+
+// Get popular satellites
+app.get('/api/n2yo/popular', (req, res) => {
+    const popular = [];
+    for (const [name, id] of Object.entries(POPULAR_SATELLITES)) {
+        popular.push({
+            name,
+            id,
+            category: SATELLITE_CATEGORIES[getCategoryForSatellite(id)]
+        });
+    }
+    res.json(popular);
+});
+
+// Helper to guess category for popular satellites
+function getCategoryForSatellite(id) {
+    if (id === 25544) return 0; // ISS
+    if (id >= 44713 && id <= 44900) return 29; // Starlink range
+    if (id >= 44056 && id <= 44100) return 30; // OneWeb range
+    if (id === 20580) return 12; // Hubble - Science
+    if (id === 43013) return 14; // NOAA - Weather
+    if (id === 41866) return 14; // GOES - Weather
+    if (id === 24876) return 7; // GPS
+    if (id >= 41918 && id <= 41999) return 16; // Iridium
+    if (id === 39084 || id === 40697) return 10; // Landsat/Sentinel - Resource
+    if (id === 27424 || id === 25994) return 14; // Aqua/Terra - Weather
+    return 0; // Default to All
+}
+
 // ============= EXPRESS ENDPOINTS =============
 
 // 1. Get events with visibility for a location

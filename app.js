@@ -224,10 +224,42 @@ function _updateEarthSidebarData() {
 // ═══════════════════════════════════════════
 //  LAYER TOGGLE
 // ═══════════════════════════════════════════
+let _launchInterval = null;
+
+async function updateLaunchOverlay() {
+    if (STATE.mode !== 'earth' || !STATE.layers.launches) return;
+    
+    try {
+        const launches = await LaunchService.getUpcomingLaunches(20);
+        if (launches && launches.length > 0) {
+            GlobeView.updateLaunches(launches);
+        }
+    } catch (error) {
+        console.error('Failed to update launch overlay:', error);
+    }
+}
+
+// Add to your layer toggle function
 function toggleLayer(name, btn) {
     STATE.layers[name] = !STATE.layers[name];
     btn.classList.toggle('on', STATE.layers[name]);
+    
     if (STATE.mode === 'earth' && GlobeView.isReady()) {
+        if (name === 'launches') {
+            if (STATE.layers.launches) {
+                updateLaunchOverlay();
+                // Update launches every hour
+                if (_launchInterval) clearInterval(_launchInterval);
+                _launchInterval = setInterval(updateLaunchOverlay, 60 * 60 * 1000);
+            } else {
+                if (_launchInterval) {
+                    clearInterval(_launchInterval);
+                    _launchInterval = null;
+                }
+                GlobeView.clearLaunches();
+            }
+        }
+        
         GlobeView.setLayer(name, STATE.layers[name], _currentGlobeData());
     }
 }
@@ -235,10 +267,24 @@ function toggleLayer(name, btn) {
 // ═══════════════════════════════════════════
 //  MARKER CLICK → PANEL
 // ═══════════════════════════════════════════
+// Update the _onMarkerClick function in app.js
+
 function _onMarkerClick(d) {
-    if (d.type === 'iss')           _panelISS(d.raw);
-    else if (d.type === 'disaster') _panelDisaster(d.raw, d.style, d.cat);
-    else if (d.type === 'neo')      _panelNEO(d.raw, d.style);
+    if (d.type === 'iss') {
+        _panelISS(d.raw);
+    } else if (d.type === 'disaster') {
+        _panelDisaster(d.raw, d.style, d.cat);
+    } else if (d.type === 'neo') {
+        // Use NEOVisualization for detailed panel
+        if (window.NEOVisualization) {
+            const html = NEOVisualization.generateNEOInfoPanel(d.raw);
+            showPanel(html);
+        } else {
+            _panelNEO(d.raw, d.style);
+        }
+    } else if (d.type === 'launch' && window._showLaunchDetail) {
+        window._showLaunchDetail(d.raw);
+    }
 }
 
 // ═══════════════════════════════════════════
@@ -328,7 +374,9 @@ async function _onGlobeLocationClick(lat, lng) {
         spaceDevsEvents,
         spaceWeather,
         locationVisibility,
-        impactRisk
+        impactRisk,
+        satellitePasses,
+        nearbyLaunches
     ] = await Promise.all([
         _reverseGeocode(lat, lng),
         _fetchLocationWeather(lat, lng),
@@ -336,7 +384,9 @@ async function _onGlobeLocationClick(lat, lng) {
         _fetchSpaceDevsEvents(lat, lng),
         _fetchSpaceWeather(lat, lng),
         _fetchLocationVisibility(lat, lng),
-        _fetchImpactRisk(lat, lng)
+        _fetchImpactRisk(lat, lng),
+        _fetchSatellitePasses(lat, lng),
+        _fetchNearbyLaunches(lat, lng)
     ]);
 
     const vis = VisibilityScore.compute(weatherData);
@@ -544,6 +594,160 @@ async function _onGlobeLocationClick(lat, lng) {
             <div class="ibox blue">ISS is ~${distKm.toLocaleString()} km away right now. It completes a full orbit every 92 minutes.</div>`;
         }
     }
+
+    // ── 4. SATELLITE PASSES ──────────────────────────────────────────────
+if (satellitePasses && satellitePasses.length > 0) {
+    html += `
+        <div class="div"></div>
+        <div class="loc-section-head">🛰️ Upcoming Satellite Passes</div>`;
+    
+    satellitePasses.forEach(({ satellite, passes }) => {
+        if (passes && passes.length > 0) {
+            const nextPass = passes[0];
+            const passDate = new Date(nextPass.startUTC * 1000);
+            const timeStr = passDate.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+            const dateStr = passDate.toLocaleDateString([], { month:'short', day:'numeric' });
+            const duration = Math.round((nextPass.endUTC - nextPass.startUTC) / 60);
+            const score = N2YOService.calculatePassScore(nextPass);
+            
+            html += `
+            <div class="satellite-pass-card" style="
+                background: rgba(30, 40, 60, 0.6);
+                border-radius: 12px;
+                padding: 12px;
+                margin-bottom: 10px;
+                border-left: 4px solid ${satellite.color || '#94a3b8'};
+            ">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    <span style="font-size: 1.2rem;">${satellite.icon || '🛰️'}</span>
+                    <span style="font-weight: 600;">${satellite.name}</span>
+                    <span style="font-size: 0.7rem; background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 12px;">
+                        ${satellite.category}
+                    </span>
+                </div>
+                <div style="display: flex; gap: 16px; font-size: 0.8rem; flex-wrap: wrap;">
+                    <div><span style="color: var(--muted);">📅</span> ${dateStr} at ${timeStr}</div>
+                    <div><span style="color: var(--muted);">⏱️</span> ${duration} min</div>
+                    <div><span style="color: var(--muted);">📐</span> Max Elev: ${nextPass.maxEl}°</div>
+                    <div><span style="color: var(--muted);">✨</span> Mag: ${nextPass.mag}</div>
+                    <div><span style="color: var(--muted);">⭐</span> Score: <span style="color: ${score > 70 ? 'var(--green)' : score > 40 ? 'var(--gold)' : 'var(--red)'}">${score}</span></div>
+                </div>
+                <div style="font-size: 0.7rem; color: var(--muted); margin-top: 8px;">
+                    Direction: ${nextPass.startAzCompass} → ${nextPass.endAzCompass}
+                </div>
+            </div>`;
+        }
+    });
+}
+
+    // ── 5. UPCOMING LAUNCHES SECTION ───────────────────────────────────
+if (nearbyLaunches && nearbyLaunches.length > 0) {
+    html += `
+        <div class="div"></div>
+        <div class="loc-section-head">🚀 Launches Near You</div>`;
+    
+    nearbyLaunches.forEach(launch => {
+        const enhanced = launch.enhanced || {};
+        const status = enhanced.status || { color: '#94a3b8', icon: '🚀', name: 'Scheduled' };
+        const launchDate = new Date(launch.net);
+        const dateStr = launchDate.toLocaleDateString('en-US', { 
+            weekday: 'short', 
+            month: 'short', 
+            day: 'numeric',
+            year: 'numeric'
+        });
+        const timeStr = launchDate.toLocaleTimeString('en-US', { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            timeZone: 'UTC'
+        });
+        
+        html += `
+        <div class="launch-card" style="
+            background: linear-gradient(145deg, rgba(30, 40, 60, 0.8), rgba(20, 30, 50, 0.9));
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 12px;
+            border-left: 4px solid ${status.color};
+            border: 1px solid rgba(255,255,255,0.05);
+            transition: all 0.2s ease;
+            cursor: pointer;
+        " onclick="window.open('${launch.url}', '_blank')">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 1.3rem;">${status.icon}</span>
+                    <span style="font-weight: 600; font-size: 0.95rem;">${launch.name || 'Unnamed Launch'}</span>
+                </div>
+                <span style="
+                    background: ${status.color}20;
+                    color: ${status.color};
+                    padding: 4px 10px;
+                    border-radius: 20px;
+                    font-size: 0.7rem;
+                    font-weight: 600;
+                ">${enhanced.daysUntil > 0 ? LaunchService.formatLaunchDate(launch.net) : status.name}</span>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px;">
+                <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 8px;">
+                    <div style="color: var(--muted); font-size: 0.65rem;">🚀 ROCKET</div>
+                    <div style="font-size: 0.8rem; font-weight: 500;">${enhanced.rocketName || launch.rocket?.configuration?.full_name || 'Unknown'}</div>
+                </div>
+                <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 8px;">
+                    <div style="color: var(--muted); font-size: 0.65rem;">🏢 AGENCY</div>
+                    <div style="font-size: 0.8rem; font-weight: 500;">${enhanced.providerAbbrev || launch.launch_service_provider?.abbrev || 'Unknown'}</div>
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 12px;">
+                <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">🎯 MISSION</div>
+                <div style="font-size: 0.85rem; line-height: 1.4;">${launch.mission?.description || launch.mission?.name || 'No mission description available'}</div>
+            </div>
+            
+            <div style="display: flex; gap: 12px; flex-wrap: wrap; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
+                <div style="display: flex; align-items: center; gap: 4px;">
+                    <span style="color: var(--muted);">📅</span>
+                    <span style="font-size: 0.75rem;">${dateStr}</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                    <span style="color: var(--muted);">⏰</span>
+                    <span style="font-size: 0.75rem;">${timeStr} UTC</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                    <span style="color: var(--muted);">📍</span>
+                    <span style="font-size: 0.75rem;">${enhanced.padName || launch.pad?.name || 'Unknown pad'}</span>
+                </div>
+                ${launch.distance ? `
+                <div style="display: flex; align-items: center; gap: 4px; margin-left: auto;">
+                    <span style="color: var(--muted);">📏</span>
+                    <span style="font-size: 0.75rem;">${Math.round(launch.distance)} km away</span>
+                </div>` : ''}
+            </div>
+            
+            ${enhanced.isSoon ? `
+            <div style="
+                margin-top: 10px;
+                background: linear-gradient(90deg, #f9731620, transparent);
+                padding: 6px 10px;
+                border-radius: 6px;
+                font-size: 0.7rem;
+                color: #f97316;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            ">
+                <span>⚠️</span>
+                <span>Launch happening soon! Check webcast for live coverage.</span>
+            </div>` : ''}
+        </div>`;
+    });
+    
+    // Add link to see all launches
+    html += `
+    <div class="ibox blue" style="text-align: center; font-size: 0.75rem; cursor: pointer;" onclick="window.open('https://launchlibrary.net', '_blank')">
+        🚀 See all upcoming launches at Launch Library
+    </div>`;
+}
 
     // ── 5. SPACE WEATHER ─────────────────────────────────────────────────
     if (spaceWeather && spaceWeather.aurora) {
@@ -798,15 +1002,315 @@ function _panelPlanet(p) {
 // ═══════════════════════════════════════════
 //  SOLAR SYSTEM — CINEMATIC THREE.JS (KEPT FROM ORIGINAL)
 // ═══════════════════════════════════════════
+// In app.js, replace the existing PLANET_DATA with this enhanced version:
+
 const PLANET_DATA = [
-    { name:'Mercury', r:.32, orbit:8,  spd:.88, col:'#8c7853', emissive:'#1a1410', emissiveIntensity:.3, rough:.95, metal:.2,  glowCol:'#9a8870', glowOpacity:.15, emoji:'☿', dist:'77M km avg',  size:'4,879 km',   temp:'430°C / -180°C', moons:0,   desc:'Smallest planet. No atmosphere means extreme temperature swings.', why:'Mercury\'s proximity to the Sun makes it a lab for studying solar wind — same particles that cause auroras on Earth.', bumpScale:.015 },
-    { name:'Venus',   r:.55, orbit:12.5,spd:.64,col:'#e8c48a', emissive:'#6a3800', emissiveIntensity:.4, rough:.65, metal:.0,  glowCol:'#ffcc44', glowOpacity:.45, emoji:'♀', dist:'261M km avg', size:'12,104 km',  temp:'465°C constant', moons:0,   desc:'Hottest planet due to a runaway CO₂ greenhouse effect.', why:'Venus is Earth\'s twin gone wrong — studying it helps model worst-case climate scenarios.', bumpScale:.008 },
-    { name:'Earth',   r:.58, orbit:17, spd:.5,  col:'#1a4d7a', emissive:'#051a2e', emissiveIntensity:.5, rough:.65, metal:.2, glowCol:'#4da6ff', glowOpacity:.65, emoji:'🌍',dist:'—',           size:'12,742 km',  temp:'avg 15°C',       moons:1,   isEarth:true, desc:'The only planet confirmed to harbor life, liquid water, and a protective magnetosphere.', why:'Every satellite orbits here. Every astronaut launched from here. Every space observation aimed from here.', bumpScale:.012, specular:0x222222, shininess:15 },
-    { name:'Mars',    r:.42, orbit:23.5,spd:.38, col:'#c1440e', emissive:'#3a1000', emissiveIntensity:.4, rough:.85, metal:.05, glowCol:'#ff6633', glowOpacity:.25, emoji:'♂', dist:'225M km avg', size:'6,779 km',   temp:'-63°C avg',      moons:2,   desc:'The Red Planet. Perseverance rover active now. Mars once had flowing rivers.', why:'Active missions send data daily. Mars research directly informs life-support tech for crewed missions.', bumpScale:.018 },
-    { name:'Jupiter', r:1.8, orbit:37, spd:.22, col:'#c88b3a', emissive:'#2a1800', emissiveIntensity:.35, rough:.55, metal:.0,  glowCol:'#e8a050', glowOpacity:.3, emoji:'♃', dist:'778M km avg', size:'139,820 km', temp:'-110°C',          moons:95,  desc:'Largest planet. Great Red Spot storm raging 350+ years. Europa may harbor life.', why:'Jupiter\'s gravity acts as a planetary shield, deflecting comets from the inner solar system.', bumpScale:.005 },
-    { name:'Saturn',  r:1.5, orbit:55, spd:.17, col:'#e6d19a', emissive:'#2a1a00', emissiveIntensity:.38,rough:.58, metal:.0,  glowCol:'#f0d880', glowOpacity:.35, emoji:'♄', dist:'1.4B km avg', size:'116,460 km', temp:'-140°C',          moons:146, hasRings:true, desc:'Ring system of ice and rock. Titan has methane lakes.', why:'Cassini orbited Saturn 13 years, transforming our understanding of ring dynamics and moon chemistry.', bumpScale:.004 },
-    { name:'Uranus',  r:1.0, orbit:72, spd:.12, col:'#5eb8c4', emissive:'#002a33', emissiveIntensity:.45,rough:.48, metal:.08, glowCol:'#7dd4e8', glowOpacity:.4, emoji:'⛢', dist:'2.7B km avg', size:'50,724 km',  temp:'-195°C',          moons:28,  desc:'Ice giant tilted 98° from an ancient collision. 42-year-long seasons.', why:'Ice giants are the most common exoplanet type — studying Uranus helps understand planetary systems.', bumpScale:.003 },
-    { name:'Neptune', r:.95, orbit:88, spd:.08, col:'#3a5fd8', emissive:'#000a44', emissiveIntensity:.5, rough:.52, metal:.08, glowCol:'#6688ff', glowOpacity:.42, emoji:'♆', dist:'4.4B km avg', size:'49,244 km',  temp:'-200°C',          moons:16,  desc:'Windiest planet at 2,100 km/h. 165 years per orbit. Visited once in 1989.', why:'A future Neptune orbiter would revolutionize understanding of the outer solar system.', bumpScale:.004 },
+    { 
+        name: 'Mercury', 
+        r: .32, 
+        orbit: 8,  
+        spd: .88, 
+        col: '#8c7853', 
+        emissive: '#1a1410', 
+        emissiveIntensity: .3, 
+        rough: .95, 
+        metal: .2,  
+        glowCol: '#9a8870', 
+        glowOpacity: .15, 
+        emoji: '☿', 
+        dist: '77M km', 
+        size: '4,879 km',   
+        temp: '430°C / -180°C', 
+        moons: 0,   
+        desc: 'Smallest planet. No atmosphere means extreme temperature swings.',
+        longDesc: 'Mercury is the closest planet to the Sun and the smallest in our solar system. It has a thin atmosphere (exosphere) causing extreme temperature variations from 430°C during the day to -180°C at night.',
+        why: 'Mercury\'s proximity to the Sun makes it a lab for studying solar wind — same particles that cause auroras on Earth.',
+        missions: ['Mariner 10 (1974-75)', 'MESSENGER (2011-15)', 'BepiColombo (2025)'],
+        facts: [
+            'A day on Mercury lasts 59 Earth days',
+            'It has a giant iron core making up 85% of its radius',
+            'Ice exists in permanently shadowed craters at the poles'
+        ],
+        wikiUrl: 'https://en.wikipedia.org/wiki/Mercury_(planet)',
+        nasaUrl: 'https://solarsystem.nasa.gov/planets/mercury',
+        viewability: 'Hard to see - always near the Sun in the sky',
+        bestTime: 'Just after sunset or before sunrise, low on horizon',
+        magnitude: '-0.5 to 1.5',
+        discovery: 'Known since ancient times',
+        category: 'Terrestrial',
+        gravity: '3.7 m/s²',
+        dayLength: '59 Earth days',
+        yearLength: '88 Earth days',
+        atmosphere: 'Thin exosphere (sodium, potassium)'
+    },
+    { 
+        name: 'Venus',   
+        r: .55, 
+        orbit: 12.5,
+        spd: .64, 
+        col: '#e8c48a', 
+        emissive: '#6a3800', 
+        emissiveIntensity: .4, 
+        rough: .65, 
+        metal: .0,  
+        glowCol: '#ffcc44', 
+        glowOpacity: .45, 
+        emoji: '♀', 
+        dist: '261M km', 
+        size: '12,104 km',  
+        temp: '465°C constant', 
+        moons: 0,   
+        desc: 'Hottest planet due to a runaway CO₂ greenhouse effect.',
+        longDesc: 'Venus is often called Earth\'s "sister planet" due to similar size, but it has a thick toxic atmosphere that traps heat, making it the hottest planet. It spins backwards compared to most planets.',
+        why: 'Venus is Earth\'s twin gone wrong — studying it helps model worst-case climate scenarios.',
+        missions: ['Venera program (USSR)', 'Magellan (1990-94)', 'Venus Express (2006-14)', 'Akatsuki (2015-)'],
+        facts: [
+            'A day on Venus is longer than its year (243 vs 225 Earth days)',
+            'Surface pressure is 90 times that of Earth',
+            'It has over 1,600 volcanoes'
+        ],
+        wikiUrl: 'https://en.wikipedia.org/wiki/Venus',
+        nasaUrl: 'https://solarsystem.nasa.gov/planets/venus',
+        viewability: 'Very bright - the "evening/morning star"',
+        bestTime: 'Just after sunset or before dawn',
+        magnitude: '-4.6 to -3.8',
+        discovery: 'Known since ancient times',
+        category: 'Terrestrial',
+        gravity: '8.87 m/s²',
+        dayLength: '243 Earth days',
+        yearLength: '225 Earth days',
+        atmosphere: '96% CO₂, 3% Nitrogen, sulfuric acid clouds'
+    },
+    { 
+        name: 'Earth',   
+        r: .58, 
+        orbit: 17, 
+        spd: .5,  
+        col: '#1a4d7a', 
+        emissive: '#051a2e', 
+        emissiveIntensity: .5, 
+        rough: .65, 
+        metal: .2, 
+        glowCol: '#4da6ff', 
+        glowOpacity: .65, 
+        emoji: '🌍',
+        dist: '149.6M km',           
+        size: '12,742 km',  
+        temp: 'avg 15°C',       
+        moons: 1,   
+        isEarth: true, 
+        desc: 'The only planet confirmed to harbor life, liquid water, and a protective magnetosphere.',
+        longDesc: 'Earth is our home planet and the only world known to support life. Its unique combination of atmosphere, water, and distance from the Sun creates perfect conditions for life.',
+        why: 'Every satellite orbits here. Every astronaut launched from here. Every space observation aimed from here.',
+        missions: ['Thousands of satellites', 'ISS', 'Landsat program', 'GOES weather satellites'],
+        facts: [
+            '71% of Earth\'s surface is water-covered',
+            'The atmosphere extends to 10,000 km',
+            'Earth is the only planet not named after a god'
+        ],
+        wikiUrl: 'https://en.wikipedia.org/wiki/Earth',
+        nasaUrl: 'https://solarsystem.nasa.gov/planets/earth',
+        viewability: 'You are here!',
+        bestTime: 'Always',
+        magnitude: 'N/A',
+        discovery: 'Home',
+        category: 'Terrestrial',
+        gravity: '9.81 m/s²',
+        dayLength: '24 hours',
+        yearLength: '365.25 days',
+        atmosphere: '78% N₂, 21% O₂, 1% other'
+    },
+    { 
+        name: 'Mars',    
+        r: .42, 
+        orbit: 23.5,
+        spd: .38, 
+        col: '#c1440e', 
+        emissive: '#3a1000', 
+        emissiveIntensity: .4, 
+        rough: .85, 
+        metal: .05, 
+        glowCol: '#ff6633', 
+        glowOpacity: .25, 
+        emoji: '♂', 
+        dist: '225M km', 
+        size: '6,779 km',   
+        temp: '-63°C avg',      
+        moons: 2,   
+        desc: 'The Red Planet. Perseverance rover active now. Mars once had flowing rivers.',
+        longDesc: 'Mars has the largest volcano in the solar system (Olympus Mons) and evidence of ancient rivers and lakes. Scientists believe it may have once harbored microbial life.',
+        why: 'Active missions send data daily. Mars research directly informs life-support tech for crewed missions.',
+        missions: ['Perseverance (2021-)', 'Curiosity (2012-)', 'Ingenuity helicopter', 'Mars Reconnaissance Orbiter'],
+        facts: [
+            'Mars has the largest dust storms in the solar system',
+            'Its moons, Phobos and Deimos, are likely captured asteroids',
+            'A Mars day is 24 hours 37 minutes - almost Earth-like'
+        ],
+        wikiUrl: 'https://en.wikipedia.org/wiki/Mars',
+        nasaUrl: 'https://solarsystem.nasa.gov/planets/mars',
+        viewability: 'Bright red-orange in the night sky',
+        bestTime: 'During opposition (every 26 months)',
+        magnitude: '-2.0 to +1.8',
+        discovery: 'Known since ancient times',
+        category: 'Terrestrial',
+        gravity: '3.71 m/s²',
+        dayLength: '24h 37m',
+        yearLength: '687 Earth days',
+        atmosphere: '95% CO₂, 3% N₂, 1.6% Argon'
+    },
+    { 
+        name: 'Jupiter', 
+        r: 1.8, 
+        orbit: 37, 
+        spd: .22, 
+        col: '#c88b3a', 
+        emissive: '#2a1800', 
+        emissiveIntensity: .35, 
+        rough: .55, 
+        metal: .0,  
+        glowCol: '#e8a050', 
+        glowOpacity: .3, 
+        emoji: '♃', 
+        dist: '778M km', 
+        size: '139,820 km', 
+        temp: '-110°C',          
+        moons: 95,  
+        desc: 'Largest planet. Great Red Spot storm raging 350+ years. Europa may harbor life.',
+        longDesc: 'Jupiter is 2.5 times more massive than all other planets combined. Its Great Red Spot is a storm larger than Earth that has raged for centuries.',
+        why: 'Jupiter\'s gravity acts as a planetary shield, deflecting comets from the inner solar system.',
+        missions: ['Juno (2016-)', 'Galileo (1995-2003)', 'Voyager flybys', 'Europa Clipper (2024)'],
+        facts: [
+            'Jupiter has 79 known moons - a solar system in miniature',
+            'Europa may have a subsurface ocean with twice Earth\'s water',
+            'Its magnetic field is 20,000 times stronger than Earth\'s'
+        ],
+        wikiUrl: 'https://en.wikipedia.org/wiki/Jupiter',
+        nasaUrl: 'https://solarsystem.nasa.gov/planets/jupiter',
+        viewability: 'Very bright - second only to Venus',
+        bestTime: 'During opposition (yearly)',
+        magnitude: '-2.9 to -1.6',
+        discovery: 'Known since ancient times',
+        category: 'Gas Giant',
+        gravity: '24.79 m/s²',
+        dayLength: '9h 56m',
+        yearLength: '11.86 Earth years',
+        atmosphere: '89% H₂, 10% He, trace gases'
+    },
+    { 
+        name: 'Saturn',  
+        r: 1.5, 
+        orbit: 55, 
+        spd: .17, 
+        col: '#e6d19a', 
+        emissive: '#2a1a00', 
+        emissiveIntensity: .38,
+        rough: .58, 
+        metal: .0,  
+        glowCol: '#f0d880', 
+        glowOpacity: .35, 
+        emoji: '♄', 
+        dist: '1.4B km', 
+        size: '116,460 km', 
+        temp: '-140°C',          
+        moons: 146, 
+        hasRings: true, 
+        desc: 'Ring system of ice and rock. Titan has methane lakes.',
+        longDesc: 'Saturn\'s rings are 250,000 km wide but only 100 meters thick. Its moon Titan has liquid methane lakes and a thick atmosphere.',
+        why: 'Cassini orbited Saturn 13 years, transforming our understanding of ring dynamics and moon chemistry.',
+        missions: ['Cassini-Huygens (2004-17)', 'Voyager flybys', 'Pioneer 11'],
+        facts: [
+            'Saturn would float in water (density less than water)',
+            'The rings are mostly water ice with some rock',
+            'Titan has weather, seasons, and liquid on its surface'
+        ],
+        wikiUrl: 'https://en.wikipedia.org/wiki/Saturn',
+        nasaUrl: 'https://solarsystem.nasa.gov/planets/saturn',
+        viewability: 'Bright yellow-white, rings visible in telescopes',
+        bestTime: 'When rings are tilted (every 15 years)',
+        magnitude: '-0.5 to +1.2',
+        discovery: 'Known since ancient times',
+        category: 'Gas Giant',
+        gravity: '10.44 m/s²',
+        dayLength: '10h 42m',
+        yearLength: '29.5 Earth years',
+        atmosphere: '96% H₂, 3% He, trace gases'
+    },
+    { 
+        name: 'Uranus',  
+        r: 1.0, 
+        orbit: 72, 
+        spd: .12, 
+        col: '#5eb8c4', 
+        emissive: '#002a33', 
+        emissiveIntensity: .45,
+        rough: .48, 
+        metal: .08, 
+        glowCol: '#7dd4e8', 
+        glowOpacity: .4, 
+        emoji: '⛢', 
+        dist: '2.7B km', 
+        size: '50,724 km',  
+        temp: '-195°C',          
+        moons: 28,  
+        desc: 'Ice giant tilted 98° from an ancient collision. 42-year-long seasons.',
+        longDesc: 'Uranus rotates on its side, likely due to a massive impact. Its 27 moons are named after Shakespeare characters.',
+        why: 'Ice giants are the most common exoplanet type — studying Uranus helps understand planetary systems.',
+        missions: ['Voyager 2 (1986)', 'Future orbiter planned'],
+        facts: [
+            'Uranus was the first planet discovered with a telescope (1781)',
+            'Its rings were discovered in 1977',
+            'It radiates less heat than it receives from the Sun'
+        ],
+        wikiUrl: 'https://en.wikipedia.org/wiki/Uranus',
+        nasaUrl: 'https://solarsystem.nasa.gov/planets/uranus',
+        viewability: 'Very faint, requires binoculars',
+        bestTime: 'During opposition',
+        magnitude: '+5.3 to +5.9',
+        discovery: 'William Herschel (1781)',
+        category: 'Ice Giant',
+        gravity: '8.69 m/s²',
+        dayLength: '17h 14m',
+        yearLength: '84 Earth years',
+        atmosphere: '83% H₂, 15% He, 2% CH₄'
+    },
+    { 
+        name: 'Neptune', 
+        r: .95, 
+        orbit: 88, 
+        spd: .08, 
+        col: '#3a5fd8', 
+        emissive: '#000a44', 
+        emissiveIntensity: .5, 
+        rough: .52, 
+        metal: .08, 
+        glowCol: '#6688ff', 
+        glowOpacity: .42, 
+        emoji: '♆', 
+        dist: '4.4B km', 
+        size: '49,244 km',  
+        temp: '-200°C',          
+        moons: 16,  
+        desc: 'Windiest planet at 2,100 km/h. 165 years per orbit. Visited once in 1989.',
+        longDesc: 'Neptune has the strongest winds in the solar system, reaching 2,100 km/h. Its Great Dark Spot is a massive storm system.',
+        why: 'A future Neptune orbiter would revolutionize understanding of the outer solar system.',
+        missions: ['Voyager 2 (1989)', 'Future orbiter planned'],
+        facts: [
+            'Neptune was discovered through mathematical prediction',
+            'Its moon Triton orbits backwards (retrograde orbit)',
+            'It has only completed one orbit since discovery (in 2011)'
+        ],
+        wikiUrl: 'https://en.wikipedia.org/wiki/Neptune',
+        nasaUrl: 'https://solarsystem.nasa.gov/planets/neptune',
+        viewability: 'Very faint, requires telescope',
+        bestTime: 'During opposition',
+        magnitude: '+7.7 to +8.0',
+        discovery: 'Johann Galle (1846)',
+        category: 'Ice Giant',
+        gravity: '11.15 m/s²',
+        dayLength: '16h 6m',
+        yearLength: '165 Earth years',
+        atmosphere: '80% H₂, 19% He, 1% CH₄'
+    },
 ];
 
 // Solar system rendering code (kept from original)
@@ -834,6 +1338,121 @@ function _initSolar() {
         _solarRenderer.setSize(window.innerWidth, window.innerHeight);
     });
     _buildStarField(); _buildNebula(); _buildSun(); _buildPlanets(); _setupSolarControls(canvas);
+}
+
+// Add these helper functions after PLANET_DATA in app.js
+
+function _getPlanetDescription(planet) {
+    return `
+        <div class="planet-description" style="line-height: 1.6; color: var(--text);">
+            <p style="margin-bottom: 12px;">${planet.longDesc || planet.desc}</p>
+            
+            <div class="planet-quick-facts" style="
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 12px;
+                margin: 16px 0;
+                background: rgba(0,0,0,0.2);
+                border-radius: 12px;
+                padding: 16px;
+            ">
+                <div>
+                    <div style="color: var(--muted); font-size: 0.7rem;">CATEGORY</div>
+                    <div style="font-weight: 600;">${planet.category || 'Unknown'}</div>
+                </div>
+                <div>
+                    <div style="color: var(--muted); font-size: 0.7rem;">GRAVITY</div>
+                    <div style="font-weight: 600;">${planet.gravity || 'Unknown'}</div>
+                </div>
+                <div>
+                    <div style="color: var(--muted); font-size: 0.7rem;">DAY LENGTH</div>
+                    <div style="font-weight: 600;">${planet.dayLength || 'Unknown'}</div>
+                </div>
+                <div>
+                    <div style="color: var(--muted); font-size: 0.7rem;">YEAR LENGTH</div>
+                    <div style="font-weight: 600;">${planet.yearLength || 'Unknown'}</div>
+                </div>
+            </div>
+            
+            <div style="margin-top: 12px;">
+                <span style="color: var(--muted); font-weight: 600;">Atmosphere: </span>
+                <span>${planet.atmosphere || 'No significant atmosphere'}</span>
+            </div>
+        </div>
+    `;
+}
+
+function _getPlanetMissions(planetName) {
+    const planet = PLANET_DATA.find(p => p.name === planetName);
+    if (!planet || !planet.missions) return '<p>No mission data available</p>';
+    
+    return planet.missions.map(mission => `
+        <div style="
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+            background: rgba(100, 150, 255, 0.1);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            border-left: 3px solid var(--gold);
+        ">
+            <span style="font-size: 1.2rem;">🚀</span>
+            <span style="flex: 1;">${mission}</span>
+        </div>
+    `).join('');
+}
+
+function _getPlanetFacts(planetName) {
+    const planet = PLANET_DATA.find(p => p.name === planetName);
+    return planet?.facts || [
+        'No facts available',
+        'Check back later for updates',
+        'NASA missions are studying this planet'
+    ];
+}
+
+function _getPlanetWikiUrl(planetName) {
+    const planet = PLANET_DATA.find(p => p.name === planetName);
+    return planet?.wikiUrl || `https://en.wikipedia.org/wiki/${planetName}`;
+}
+
+function _getPlanetNasaUrl(planetName) {
+    const planet = PLANET_DATA.find(p => p.name === planetName);
+    return planet?.nasaUrl || `https://solarsystem.nasa.gov/planets/${planetName.toLowerCase()}`;
+}
+
+function _getPlanetViewingInfo(planetName) {
+    const planet = PLANET_DATA.find(p => p.name === planetName);
+    if (!planet) return '<p>No viewing information available</p>';
+    
+    return `
+        <div style="
+            background: rgba(0,0,0,0.2);
+            border-radius: 12px;
+            padding: 16px;
+            margin: 12px 0;
+        ">
+            <div style="display: grid; gap: 12px;">
+                <div>
+                    <span style="color: var(--muted);">Visibility:</span>
+                    <span style="margin-left: 8px;">${planet.viewability || 'Visible with telescope'}</span>
+                </div>
+                <div>
+                    <span style="color: var(--muted);">Best Time:</span>
+                    <span style="margin-left: 8px;">${planet.bestTime || 'During opposition'}</span>
+                </div>
+                <div>
+                    <span style="color: var(--muted);">Magnitude:</span>
+                    <span style="margin-left: 8px;">${planet.magnitude || 'Varies'}</span>
+                </div>
+                <div>
+                    <span style="color: var(--muted);">Discovered:</span>
+                    <span style="margin-left: 8px;">${planet.discovery || 'Ancient times'}</span>
+                </div>
+            </div>
+        </div>
+    `;
 }
 
 function _buildStarField() {
@@ -1103,29 +1722,39 @@ function _setupSolarControls(canvas) {
             canvas.style.cursor='pointer'; 
         }
     });
-    canvas.addEventListener('click', e => {
-        if (_moved) return;
-        _solarMouse.x=(e.clientX/window.innerWidth)*2-1;
-        _solarMouse.y=-(e.clientY/window.innerHeight)*2+1;
-        _solarRaycaster.setFromCamera(_solarMouse,_solarCamera);
-        const hits=_solarRaycaster.intersectObjects(_solarPlanets.map(p=>p.mesh), true);
-        if (hits.length>0) {
-            let clickedObject = hits[0].object;
-            let planet = clickedObject.userData.planet;
-            
-            while (!planet && clickedObject.parent) {
-                clickedObject = clickedObject.parent;
-                planet = clickedObject.userData.planet;
-            }
-            
-            if (planet && planet.isEarth === true) {
+    // In app.js, find the canvas click event listener in _setupSolarControls function
+// Replace the existing click handler with this:
+
+canvas.addEventListener('click', e => {
+    if (_moved) return;
+    
+    _solarMouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+    _solarMouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    _solarRaycaster.setFromCamera(_solarMouse, _solarCamera);
+    
+    const hits = _solarRaycaster.intersectObjects(_solarPlanets.map(p => p.mesh), true);
+    
+    if (hits.length > 0) {
+        let clickedObject = hits[0].object;
+        let planet = clickedObject.userData.planet;
+        
+        // Traverse up to find planet data
+        while (!planet && clickedObject.parent) {
+            clickedObject = clickedObject.parent;
+            planet = clickedObject.userData.planet;
+        }
+        
+        if (planet) {
+            if (planet.isEarth === true) {
+                // Earth goes to Earth Intel mode
                 goEarth();
-                return;
-            } else if (planet) {
-                _panelPlanet(planet);
+            } else {
+                // Other planets show detailed planet panel
+                _showPlanetDetailPanel(planet);
             }
         }
-    });
+    }
+});
     canvas.addEventListener('wheel', e => { _camR=Math.max(20,Math.min(160,_camR+e.deltaY*.09)); },{passive:true});
 }
 
@@ -1147,6 +1776,147 @@ function _solarLoop() {
     _solarCamera.position.z=_camR*Math.sin(_camPhi)*Math.cos(_camTheta);
     _solarCamera.lookAt(0,0,0);
     _solarRenderer.render(_solarScene,_solarCamera);
+}
+
+// Add this complete function to app.js
+function _showPlanetDetailPanel(planet) {
+    console.log('Showing planet panel for:', planet.name);
+    
+    // Get additional planet data
+    const planetData = PLANET_DATA.find(p => p.name === planet.name) || planet;
+    
+    // Get visibility score from current location
+    const vis = VisibilityScore.compute(useNASAData.get('weather'));
+    const sc = vis.score > 70 ? 'var(--green)' : vis.score > 45 ? 'var(--gold)' : 'var(--red)';
+    
+    const html = `
+        <div class="ptag planet">${planetData.emoji || '🪐'} PLANET</div>
+        <div class="ptitle">${planetData.name}</div>
+        <div class="psub">${planetData.desc || 'Click for detailed information'}</div>
+        
+        <div class="div"></div>
+        
+        <!-- Quick Stats Grid -->
+        <div class="fgrid">
+            <div class="fcard">
+                <div class="flbl">Distance from Sun</div>
+                <div class="fval">${planetData.dist || 'Varies'}</div>
+            </div>
+            <div class="fcard">
+                <div class="flbl">Diameter</div>
+                <div class="fval">${planetData.size || 'Unknown'}</div>
+            </div>
+            <div class="fcard">
+                <div class="flbl">Temperature</div>
+                <div class="fval">${planetData.temp || 'Varies'}</div>
+            </div>
+            <div class="fcard">
+                <div class="flbl">Moons</div>
+                <div class="fval">${planetData.moons || 0}</div>
+            </div>
+        </div>
+        
+        <div class="div"></div>
+        
+        <!-- Main Description -->
+        <div class="planet-detail-content">
+            ${_getPlanetDescription(planetData)}
+        </div>
+        
+        <div class="div"></div>
+        
+        <!-- Viewing Information -->
+        <div class="section-label">🔭 Viewing from Earth</div>
+        ${_getPlanetViewingInfo(planetData.name)}
+        
+        <div class="div"></div>
+        
+        <!-- Missions Section -->
+        <div class="section-label">🚀 Active & Past Missions</div>
+        <div class="missions-list">
+            ${_getPlanetMissions(planetData.name)}
+        </div>
+        
+        <div class="div"></div>
+        
+        <!-- Visibility Tonight -->
+        <div class="section-label">🌌 Visibility Tonight</div>
+        ${_scoreBar('Viewing Quality', vis.score, sc)}
+        <div class="ibox ${vis.score > 60 ? 'green' : 'gold'}" style="margin-bottom: 16px;">
+            ${vis.message}
+        </div>
+        
+        <!-- Fun Facts -->
+        <div class="section-label">✨ Fun Facts</div>
+        <ul style="
+            margin: 8px 0 16px 0; 
+            padding-left: 20px; 
+            color: var(--muted); 
+            font-size: 0.85rem;
+            list-style-type: none;
+        ">
+            ${_getPlanetFacts(planetData.name).map(fact => `
+                <li style="margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
+                    <span style="color: var(--gold);">•</span>
+                    <span>${fact}</span>
+                </li>
+            `).join('')}
+        </ul>
+        
+        <!-- Explore Buttons -->
+        <div style="display: flex; gap: 10px; margin-top: 20px;">
+            <button onclick="window.open('${_getPlanetNasaUrl(planetData.name)}', '_blank')" style="
+                flex: 1;
+                padding: 12px;
+                background: linear-gradient(145deg, #1e293b, #0f172a);
+                border: 1px solid #3b82f6;
+                color: #3b82f6;
+                border-radius: 8px;
+                cursor: pointer;
+                font-weight: 600;
+                transition: all 0.2s;
+            " onmouseover="this.style.background='#1e293b'; this.style.color='#60a5fa'" 
+               onmouseout="this.style.background='linear-gradient(145deg, #1e293b, #0f172a)'; this.style.color='#3b82f6'">
+                🚀 NASA Page
+            </button>
+            <button onclick="window.open('${_getPlanetWikiUrl(planetData.name)}', '_blank')" style="
+                flex: 1;
+                padding: 12px;
+                background: linear-gradient(145deg, #1e293b, #0f172a);
+                border: 1px solid #94a3b8;
+                color: #94a3b8;
+                border-radius: 8px;
+                cursor: pointer;
+                font-weight: 600;
+                transition: all 0.2s;
+            " onmouseover="this.style.background='#1e293b'; this.style.color='#cbd5e1'" 
+               onmouseout="this.style.background='linear-gradient(145deg, #1e293b, #0f172a)'; this.style.color='#94a3b8'">
+                📚 Wikipedia
+            </button>
+        </div>
+        
+        <!-- APOD Section (if available) -->
+        ${useNASAData.get('apod') ? `
+            <div class="div"></div>
+            <div class="section-label">✨ Today's NASA Astronomy Picture</div>
+            ${useNASAData.get('apod').media_type === 'image' ? 
+                `<img src="${useNASAData.get('apod').url}" style="
+                    width: 100%;
+                    border-radius: 12px;
+                    margin: 10px 0;
+                    border: 1px solid var(--border);
+                " onerror="this.style.display='none'"/>` : ''
+            }
+            <div style="font-size: 0.85rem; color: var(--text); font-weight: 600; margin: 8px 0;">
+                ${useNASAData.get('apod').title}
+            </div>
+            <div style="font-size: 0.75rem; color: var(--muted); line-height: 1.5;">
+                ${(useNASAData.get('apod').explanation || '').slice(0, 200)}...
+            </div>
+        ` : ''}
+    `;
+    
+    showPanel(html);
 }
 
 // Update the goEarthImpact function in app.js
@@ -1239,6 +2009,49 @@ function goEarthImpact() {
         console.error('Failed to subscribe to EarthImpact:', error);
     }
 }
+
+async function _fetchSatellitePasses(lat, lng) {
+    try {
+        // Get passes for popular satellites
+        const popular = await N2YOService.getPopularSatellites();
+        const passes = [];
+        
+        for (const sat of popular.slice(0, 5)) { // Check top 5 popular satellites
+            const data = await N2YOService.getVisualPasses(sat.id, lat, lng, 3, 20);
+            if (data && data.passes) {
+                passes.push({
+                    satellite: sat,
+                    passes: data.passes
+                });
+            }
+        }
+        
+        return passes;
+    } catch (error) {
+        console.warn('Satellite passes error:', error);
+        return null;
+    }
+}
+
+async function _fetchNearbyLaunches(lat, lng) {
+    try {
+        if (typeof LaunchService === 'undefined') {
+            console.warn('LaunchService not available');
+            return null;
+        }
+        
+        // Get launches within 2000km of clicked location
+        const launches = await LaunchService.getLaunchesByLocation(lat, lng, 2000);
+        return launches.slice(0, 5); // Return top 5 closest launches
+    } catch (error) {
+        console.warn('Failed to fetch nearby launches:', error);
+        return null;
+    }
+}
+// Add this section to your HTML generation in _onGlobeLocationClick
+// after the ISS Pass section:
+
+
 
 
 // Make function globally available

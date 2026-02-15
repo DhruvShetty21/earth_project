@@ -120,7 +120,141 @@ const NasaService = (() => {
         }
     }
 
-    return { fetchEONET, fetchAPOD, fetchNEOWs, fetchDONKI, fetchISS, FALLBACK_DISASTERS, FALLBACK_APOD };
+    // services/nasaService.js - Add these methods to the existing NasaService
+
+// Add to the NasaService object in nasaService.js
+
+// Get detailed NEO data with orbital info
+async function getNEODetails(asteroidId) {
+    return CacheMiddleware.wrap(`NEO_${asteroidId}`, 'NEOWS', async () => {
+        try {
+            const apiKey = _getApiKey();
+            const response = await fetch(
+                `https://api.nasa.gov/neo/rest/v1/neo/${asteroidId}?api_key=${apiKey}`
+            );
+            if (!response.ok) throw new Error(`NEO API error: ${response.status}`);
+            return await response.json();
+        } catch (error) {
+            console.error('Failed to fetch NEO details:', error);
+            return null;
+        }
+    });
+}
+
+// Get NEOs by date range with filtering
+async function getNEOsByDateRange(startDate, endDate, options = {}) {
+    const { hazardous = null, minDiameter = 0, maxDistance = null } = options;
+    const cacheKey = `NEOWS_${startDate}_${endDate}_${hazardous}_${minDiameter}`;
+    
+    return CacheMiddleware.wrap(cacheKey, 'NEOWS', async () => {
+        try {
+            const apiKey = _getApiKey();
+            const response = await fetch(
+                `https://api.nasa.gov/neo/rest/v1/feed?start_date=${startDate}&end_date=${endDate}&api_key=${apiKey}`
+            );
+            if (!response.ok) throw new Error(`NEO API error: ${response.status}`);
+            
+            const data = await response.json();
+            let neos = Object.values(data.near_earth_objects).flat();
+            
+            // Apply filters
+            if (hazardous !== null) {
+                neos = neos.filter(n => n.is_potentially_hazardous_asteroid === hazardous);
+            }
+            
+            if (minDiameter > 0) {
+                neos = neos.filter(n => 
+                    n.estimated_diameter?.meters?.estimated_diameter_max >= minDiameter
+                );
+            }
+            
+            if (maxDistance !== null) {
+                neos = neos.filter(n => {
+                    const dist = parseFloat(n.close_approach_data?.[0]?.miss_distance?.lunar || 999);
+                    return dist <= maxDistance;
+                });
+            }
+            
+            return neos;
+        } catch (error) {
+            console.error('Failed to fetch NEOs:', error);
+            return [];
+        }
+    });
+}
+
+// Get upcoming close approaches
+async function getUpcomingCloseApproaches(days = 30) {
+    const today = new Date();
+    const endDate = new Date(today);
+    endDate.setDate(today.getDate() + days);
+    
+    const startStr = today.toISOString().split('T')[0];
+    const endStr = endDate.toISOString().split('T')[0];
+    
+    return getNEOsByDateRange(startStr, endStr, { 
+        hazardous: true,
+        maxDistance: 30 // Within 30 lunar distances
+    });
+}
+
+// Get NEO statistics
+async function getNEOStats() {
+    return CacheMiddleware.wrap('NEO_STATS', 'NEOWS', async () => {
+        try {
+            const apiKey = _getApiKey();
+            const today = new Date();
+            const startDate = new Date(today);
+            startDate.setDate(today.getDate() - 7);
+            const endDate = new Date(today);
+            endDate.setDate(today.getDate() + 7);
+            
+            const startStr = startDate.toISOString().split('T')[0];
+            const endStr = endDate.toISOString().split('T')[0];
+            
+            const response = await fetch(
+                `https://api.nasa.gov/neo/rest/v1/feed?start_date=${startStr}&end_date=${endStr}&api_key=${apiKey}`
+            );
+            if (!response.ok) throw new Error(`NEO API error: ${response.status}`);
+            
+            const data = await response.json();
+            const allNeos = Object.values(data.near_earth_objects).flat();
+            
+            return {
+                total: data.element_count || 0,
+                hazardous: allNeos.filter(n => n.is_potentially_hazardous_asteroid).length,
+                closest: allNeos.sort((a, b) => {
+                    const distA = parseFloat(a.close_approach_data?.[0]?.miss_distance?.lunar || 999);
+                    const distB = parseFloat(b.close_approach_data?.[0]?.miss_distance?.lunar || 999);
+                    return distA - distB;
+                })[0],
+                largest: allNeos.sort((a, b) => 
+                    (b.estimated_diameter?.meters?.estimated_diameter_max || 0) - 
+                    (a.estimated_diameter?.meters?.estimated_diameter_max || 0)
+                )[0],
+                byDay: data.near_earth_objects
+            };
+        } catch (error) {
+            console.error('Failed to fetch NEO stats:', error);
+            return null;
+        }
+    });
+}
+
+// Add to exports
+return {
+    fetchEONET,
+    fetchAPOD,
+    fetchNEOWs,
+    fetchDONKI,
+    fetchISS,
+    getNEODetails,
+    getNEOsByDateRange,
+    getUpcomingCloseApproaches,
+    getNEOStats,
+    FALLBACK_DISASTERS,
+    FALLBACK_APOD
+};
 })();
 
 window.NasaService = NasaService;
