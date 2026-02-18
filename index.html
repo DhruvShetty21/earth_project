@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>AstroView — Space-to-Earth Intelligence</title>
+
+    <!--
+        CRITICAL LOADING ORDER:
+        1. globe.gl ALREADY bundles Three.js internally — do NOT load Three.js separately
+           before globe.gl or it will conflict.
+        2. We load Three.js from unpkg (latest) ONLY for the solar system canvas.
+        3. globe.gl must come AFTER Three.js so it can detect and reuse it.
+    -->
+
+    <!-- Step 1: Three.js (latest via unpkg — compatible with globe.gl 2.x) -->
+    <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+
+    <!-- Step 2: globe.gl (uses the Three.js loaded above) -->
+    <script src="https://unpkg.com/globe.gl@2.45.0/dist/globe.gl.min.js"></script>
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- LOADING -->
+    <div id="loading">
+        <div class="ld-logo">ASTROVIEW</div>
+        <div class="ld-sub">Space-to-Earth Intelligence Platform</div>
+        <div class="ld-track"><div class="ld-fill" id="ldfill"></div></div>
+        <div class="ld-msg" id="ldmsg">Initializing…</div>
+    </div>
+
+    <!-- NAV -->
+    <nav>
+        <div class="logo">ASTRO<em>VIEW</em></div>
+        <div class="nav-right">
+            <button class="mbtn active" id="btn-solar" onclick="goSolar()">☀ Solar System</button>
+            <button class="mbtn" id="btn-earth" onclick="goEarth()">🌍 Earth Intel</button>
+            <button class="mbtn" id="btn-impact" onclick="goEarthImpact()">🌋 Earth Impact</button>
+            <button class="api-badge" onclick="document.getElementById('apiModal').classList.add('show')">⚙ API Keys</button>
+        </div>
+    </nav>
+
+    <!-- ALERTS -->
+    <div id="alert-wrap"></div>
+
+    <!-- SOLAR SYSTEM CANVAS -->
+    <div id="solar-wrap">
+        <canvas id="solar-canvas"></canvas>
+    </div>
+
+    <!-- GLOBE.GL EARTH -->
+    <div id="earth-wrap" class="hidden">
+        <div id="globeViz"></div>
+    </div>
+
+    <!-- EARTH IMPACT MONITORING -->
+    <div id="impact-wrap" class="hidden">
+        <!-- EarthImpactUI will render here -->
+    </div>
+
+    <!-- EARTH INFO SIDEBAR (Earth Intel Mode) -->
+    <div id="earth-info-sidebar">
+        <button class="earth-close-btn" onclick="closeEarthSidebar()">✕</button>
+        <div class="earth-sidebar-content">
+            <!-- Header -->
+            <div class="earth-info-header">
+                <div class="ptag earth">🌍 PLANET</div>
+                <div class="earth-info-title">Earth</div>
+                <div class="earth-info-subtitle">The only planet confirmed to harbor life, liquid water, and a protective magnetosphere.</div>
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- Stats Grid -->
+            <div class="earth-stat-grid">
+                <div class="earth-stat-card">
+                    <div class="earth-stat-label">AVG DISTANCE</div>
+                    <div class="earth-stat-value">149.6M km</div>
+                </div>
+                <div class="earth-stat-card">
+                    <div class="earth-stat-label">DIAMETER</div>
+                    <div class="earth-stat-value">12,742 km</div>
+                </div>
+                <div class="earth-stat-card">
+                    <div class="earth-stat-label">TEMPERATURE</div>
+                    <div class="earth-stat-value">avg 15°C</div>
+                </div>
+                <div class="earth-stat-card">
+                    <div class="earth-stat-label">MOONS</div>
+                    <div class="earth-stat-value highlight">1</div>
+                </div>
+            </div>
+
+            <!-- Why it matters -->
+            <div class="info-box blue">
+                <strong>🌍 Why it matters:</strong><br>
+                Every satellite orbits here. Every astronaut launched from here. Every space observation aimed from here.
+            </div>
+
+            <div class="divider"></div>
+
+            <!-- Live Monitoring -->
+            <div class="earth-live-data">
+                <div class="earth-live-title">
+                    <span class="live-dot"></span>
+                    LIVE MONITORING
+                </div>
+                <div class="earth-live-stats">
+                    <div class="earth-live-stat">
+                        <span class="earth-live-stat-label">Active Satellites</span>
+                        <span class="earth-live-stat-value" id="earth-satellites">~8,000+</span>
+                    </div>
+                    <div class="earth-live-stat">
+                        <span class="earth-live-stat-label">ISS Orbits Today</span>
+                        <span class="earth-live-stat-value" id="earth-iss-orbits">~16</span>
+                    </div>
+                    <div class="earth-live-stat">
+                        <span class="earth-live-stat-label">Tracked Disasters</span>
+                        <span class="earth-live-stat-value" id="earth-disasters">60</span>
+                    </div>
+                    <div class="earth-live-stat">
+                        <span class="earth-live-stat-label">Near-Earth Objects</span>
+                        <span class="earth-live-stat-value" id="earth-neos">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Space Infrastructure Section -->
+            <div class="earth-section">
+                <div class="earth-section-title">🛰 SPACE INFRASTRUCTURE</div>
+                <div class="earth-feature-list">
+                    <div class="earth-feature-item">
+                        <span class="earth-feature-icon">🛸</span>
+                        <span class="earth-feature-text">ISS orbits every 92 minutes at 408 km altitude</span>
+                    </div>
+                    <div class="earth-feature-item">
+                        <span class="earth-feature-icon">📡</span>
+                        <span class="earth-feature-text">24+ GPS satellites provide global positioning</span>
+                    </div>
+                    <div class="earth-feature-item">
+                        <span class="earth-feature-icon">🌦</span>
+                        <span class="earth-feature-text">Weather satellites monitor climate 24/7</span>
+                    </div>
+                    <div class="earth-feature-item">
+                        <span class="earth-feature-icon">🔭</span>
+                        <span class="earth-feature-text">Earth observation satellites track changes</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Planetary Features Section -->
+            <div class="earth-section">
+                <div class="earth-section-title">🌍 PLANETARY FEATURES</div>
+                <div class="earth-feature-list">
+                    <div class="earth-feature-item">
+                        <span class="earth-feature-icon">💧</span>
+                        <span class="earth-feature-text">71% water coverage — unique in solar system</span>
+                    </div>
+                    <div class="earth-feature-item">
+                        <span class="earth-feature-icon">🌫</span>
+                        <span class="earth-feature-text">Protective ozone layer blocks harmful UV</span>
+                    </div>
+                    <div class="earth-feature-item">
+                        <span class="earth-feature-icon">🧲</span>
+                        <span class="earth-feature-text">Magnetic field shields from solar wind</span>
+                    </div>
+                    <div class="earth-feature-item">
+                        <span class="earth-feature-icon">🌡</span>
+                        <span class="earth-feature-text">Goldilocks zone — perfect for liquid water</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Scientific Missions Section -->
+            <div class="earth-section">
+                <div class="earth-section-title">🔬 SCIENTIFIC MISSIONS</div>
+                <div class="earth-feature-list">
+                    <div class="earth-feature-item">
+                        <span class="earth-feature-icon">🛰</span>
+                        <span class="earth-feature-text">Landsat: 50+ years of continuous Earth imaging</span>
+                    </div>
+                    <div class="earth-feature-item">
+                        <span class="earth-feature-icon">🌊</span>
+                        <span class="earth-feature-text">GRACE: Measures ice sheet & ocean changes</span>
+                    </div>
+                    <div class="earth-feature-item">
+                        <span class="earth-feature-icon">🔥</span>
+                        <span class="earth-feature-text">MODIS: Real-time fire & vegetation tracking</span>
+                    </div>
+                    <div class="earth-feature-item">
+                        <span class="earth-feature-icon">☁️</span>
+                        <span class="earth-feature-text">CloudSat: 3D cloud structure mapping</span>
+                    </div>
+                </div>
+            </div>
+
+            <div id="rate-limit-status" 
+     style="position: fixed; bottom: 20px; right: 20px; z-index: 9999;">
+</div>
+
+            <!-- Footer Note -->
+            <div class="info-box green">
+                ✅ Earth is the only planet with confirmed life, a breathable atmosphere, and liquid water on its surface. Over 8,000 active satellites continuously monitor and protect our home planet.
+            </div>
+        </div>
+    </div>
+
+    <!-- CHIPS (Earth mode) -->
+    <div id="chips">
+        <div class="chip"><span class="cdot cdot-live"></span><span id="chip-iss">ISS — loading…</span></div>
+        <div class="chip"><span class="cdot cdot-warn"></span><span id="chip-dis">Disasters — loading…</span></div>
+        <div class="chip"><span class="cdot cdot-blue"></span><span id="chip-neo">NEOs — loading…</span></div>
+    </div>
+
+    <!-- LAYER CONTROLS -->
+    <div id="layers">
+        <div class="ltitle">Data Layers</div>
+        <div class="lrow"><span class="lname">🛸 ISS Position</span><button class="tog on" id="t-iss" onclick="toggleLayer('iss',this)"></button></div>
+        <div class="lrow"><span class="lname">🔥 Active Disasters</span><button class="tog on" id="t-dis" onclick="toggleLayer('disasters',this)"></button></div>
+        <div class="lrow"><span class="lname">☄ Asteroids (NEO)</span><button class="tog on" id="t-neo" onclick="toggleLayer('neo',this)"></button></div>
+        <div class="lrow"><span class="lname">🌩 Solar Storms</span><button class="tog" id="t-cme" onclick="toggleLayer('cme',this)"></button></div>
+        <div class="lrow"><span class="lname">🚀 Upcoming Launches</span><button class="tog" id="t-lnc" onclick="toggleLayer('launches',this)"></button></div>
+        <div class="lrow"><span class="lname">🛰️ Satellites Overhead</span><button class="tog" id="t-sat" onclick="toggleLayer('satellites',this)"></button></div>
+    </div>
+
+    
+
+    <!-- SIDE PANEL -->
+    <div id="panel">
+        <button class="pcls" onclick="closePanel()">✕</button>
+        <div class="pbody" id="pbody"></div>
+    </div>
+
+    <!-- HINT -->
+    <div id="hint">Click any planet to explore · Earth opens Intel Mode</div>
+
+    <!-- API KEY MODAL -->
+    <div id="apiModal">
+        <div class="modal-box">
+            <div class="modal-title">🔑 API Configuration</div>
+            <div class="modal-sub">
+                Enter your API keys to enable live data. Keys are stored in your browser only —
+                never sent anywhere except directly to the respective APIs.
+            </div>
+            <div class="field">
+                <label>NASA API Key (APOD, NeoWs, EONET, DONKI, FIRMS)</label>
+                <input type="text" id="key-nasa" placeholder="1c8XmhiDWqkHiogI31sfd5IpO0m2SpsyzTX3cA7y"/>
+                <small>Free key: <a href="https://api.nasa.gov" target="_blank">api.nasa.gov</a> — 1000 req/day</small>
+            </div>
+            <div class="field">
+                <label>OpenWeather API Key</label>
+                <input type="text" id="key-weather" placeholder="69fa5b81f5c276b619d4bc386cea7a06"/>
+                <small>Free key: <a href="https://openweathermap.org/api" target="_blank">openweathermap.org/api</a></small>
+            </div>
+            <div class="field">
+                <label>Your City (for viewing conditions)</label>
+                <input type="text" id="key-city" placeholder="e.g. Mumbai, IN"/>
+            </div>
+            <div class="modal-btns">
+                <button class="mbtn-save" onclick="saveKeys()">SAVE & LOAD DATA</button>
+                <button class="mbtn-close" onclick="document.getElementById('apiModal').classList.remove('show')">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!--
+        SCRIPT LOADING ORDER — DO NOT CHANGE:
+        engine/* has no dependencies → load first
+        services/* depends on engine → load second
+        hooks/* depends on services → load third
+        earth/* depends on hooks + THREE + Globe → load fourth
+        components/* depends on everything → load fifth
+        app.js depends on everything → load last
+    -->
+
+    <script src="ui/RateLimitIndicator.js"></script>
+
+    <script src="engine/simplifier.js"></script>
+    <script src="engine/riskCalculator.js"></script>
+    <script src="engine/visibilityScore.js"></script>
+    <script src="engine/locationEvents.js"></script>
+    <script src="engine/astroCalculator.js"></script>
+    
+    <script src="services/cacheMiddleware.js"></script>
+    <script src="services/nasaService.js"></script>
+    <script src="services/weatherService.js"></script>
+    <script src="services/n2yoService.js"></script>
+    <script src="services/launchService.js"></script>
+    <script src="services/neoVisualization.js"></script>
+    <script src="services/firmsService.js"></script>
+    
+    <script src="hooks/useISSPosition.js"></script>
+    <script src="hooks/useNASAData.js"></script>
+    
+    <script src="earth/GlobeView.js"></script>
+    
+    <!-- Earth Impact Components -->
+    <script src="components/EarthImpact.js"></script>
+    <script src="components/EarthImpactUI.js"></script>
+    
+    <!-- Main App -->
+    <script src="app.js"></script>
+
+    <!-- Initialize after load -->
+    <script>
+        // Wait for app to initialize
+        window.addEventListener('load', () => {
+            console.log('🚀 AstroView fully loaded — ready for launch');
+            
+            // Set initial active button state
+            document.getElementById('btn-solar').classList.add('active');
+            document.getElementById('btn-earth').classList.remove('active');
+            document.getElementById('btn-impact').classList.remove('active');
+        });
+    </script>
+
+</body>
+</html>
