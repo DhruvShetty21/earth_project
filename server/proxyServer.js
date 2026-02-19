@@ -1,17 +1,13 @@
 // server/proxyServer.js
 // Node.js proxy server with SpaceDevs event visibility calculations
 // Run with: node server/proxyServer.js
-
 require('dotenv').config();
-
 
 const express = require('express');
 const axios = require('axios');
 const path = require('path');
 const app = express();
-
 const port = 3000;
-
 
 // Serve static files
 app.use(express.static(path.join(__dirname, '..')));
@@ -281,7 +277,6 @@ async function fetchSpaceDevsEvents(limit = 50, daysAhead = 90) {
 
 // 1. Get events with visibility for a location
 
-
 app.get('/api/n2yo/above', async (req, res) => {
     try {
         const { lat, lon, radius = 70, category = 0 } = req.query;
@@ -439,9 +434,7 @@ app.get('/api/events/types', async (req, res) => {
 app.get('/api/nasa/*', async (req, res) => {
     try {
         const apiPath = req.params[0];
-
         const apiKey = process.env.NASA_API_KEY;
-
         
         let url = `https://api.nasa.gov/${apiPath}`;
         const separator = url.includes('?') ? '&' : '?';
@@ -491,7 +484,6 @@ app.get('/api/iss', async (req, res) => {
 app.get('/api/iss-pass', async (req, res) => {
     try {
         const { lat, lon } = req.query;
-
         const apiKey = process.env.N2YO_API_KEY;
 
         if (!lat || !lon) {
@@ -513,7 +505,6 @@ app.get('/api/iss-pass', async (req, res) => {
 
     } catch (error) {
         console.error("ISS PASS ERROR:", error.message);
-
         res.status(500).json({ error: error.message });
     }
 });
@@ -523,9 +514,7 @@ app.get('/api/iss-pass', async (req, res) => {
 // Proxied server-side to avoid CORS. Cached for 1 hour (fires update every 12h).
 
 app.get('/api/firms', async (req, res) => {
-
     const NASA_KEY = process.env.NASA_FIRMS_KEY || process.env.NASA_API_KEY;
-
     const { source = 'VIIRS_SNPP_NRT', days = 1 } = req.query;
 
     // Only allow known safe sources
@@ -640,45 +629,6 @@ app.get('/api/eonet', async (req, res) => {
     }
 });
 
-
-// Chatbot
-// ================== AI CHATBOT ENDPOINT ==================
-app.use(express.json());
-
-app.post('/api/chat', async (req, res) => {
-    try {
-        const { message } = req.body;
-
-        console.log("Incoming message:", message);
-
-        const response = await axios.post(
-    "https://openrouter.ai/api/v1/chat/completions",
-    {
-        model: "mistralai/mistral-7b-instruct",
-        messages: [
-            { role: "user", content: message }
-        ]
-    },
-    {
-        headers: {
-            "Authorization": "Bearer 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",
-            "HTTP-Referer": "http://localhost:3000",
-            "X-Title": "AstroView"
-        }
-    }
-);
-
-const reply = response.data.choices[0].message.content;
-
-
-        res.json({ reply });
-
-    } catch (err) {
-        console.error("FULL ERROR:", err.response?.data || err.message);
-        res.status(500).json({ error: "Chat failed" });
-    }
-});
-
 app.get('/api/n2yo/visual-passes', async (req, res) => {
     try {
         const { id, lat, lon, days = 7, min_elevation = 10 } = req.query;
@@ -696,9 +646,9 @@ app.get('/api/n2yo/visual-passes', async (req, res) => {
         res.json(response.data);
     } catch (error) {
         res.status(500).json({ error: error.message });
-
     }
 });
+
 
 // ============= NASA EONET — SINGLE CATEGORY =============
 // Convenience route: /api/eonet/wildfires  /api/eonet/severeStorms  etc.

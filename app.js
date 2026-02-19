@@ -2113,13 +2113,13 @@ function initChatbot() {
 
         const reply = await ChatService.send(msg);
 
-        const formatted = marked.parse(reply);
+        const formatted = reply ? marked.parse(reply) : '<em>No response received.</em>';
 
-chatBox.innerHTML += `
-    <div class="chat-ai">
-        <div class="chat-bubble">${formatted}</div>
-    </div>
-`;
+        chatBox.innerHTML += `
+            <div class="chat-ai">
+                <div class="chat-bubble">${formatted}</div>
+            </div>
+        `;
 
         chatBox.scrollTop = chatBox.scrollHeight;
     });
