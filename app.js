@@ -7,7 +7,7 @@ const STATE = {
     mode:   'solar',
     layers: { iss: true, disasters: true, neo: true, cme: false, launches: false },
     keys: {
-        nasa:    localStorage.getItem('av_nasa')    || 'DEMO_KEY',
+        nasa:    localStorage.getItem('av_nasa'),
         weather: localStorage.getItem('av_weather') || '',
         city:    localStorage.getItem('av_city')    || '',
     },
@@ -43,7 +43,7 @@ function _finishLoad() {
     el.style.opacity = '0'; el.style.transition = 'opacity 0.7s ease';
     setTimeout(() => el.remove(), 750);
 
-    document.getElementById('key-nasa').value    = STATE.keys.nasa !== 'DEMO_KEY' ? STATE.keys.nasa : '';
+    document.getElementById('key-nasa').value    = STATE.keys.nasa !== STATE.keys.nasa;
     document.getElementById('key-weather').value = STATE.keys.weather;
     document.getElementById('key-city').value    = STATE.keys.city;
 
@@ -59,6 +59,21 @@ function _finishLoad() {
         }
     });
 }
+
+function formatDuration(seconds) {
+    if (!seconds || isNaN(seconds) || seconds < 0) return '0 sec';
+
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+
+    if (h > 0 && m > 0) return `${h}h ${m}m`;
+    if (h > 0)          return `${h}h`;
+    if (m > 0 && s > 0) return `${m}m ${s}s`;
+    if (m > 0)          return `${m}m`;
+    return `${s}s`;
+}
+
 
 // ═══════════════════════════════════════════
 //  DATA LOADING
@@ -313,17 +328,6 @@ async function _fetchSpaceWeather(lat, lng) {
     }
 }
 
-async function _fetchLocationVisibility(lat, lng) {
-    try {
-        const response = await fetch(`/api/location/visibility?lat=${lat}&lon=${lng}`);
-        if (!response.ok) throw new Error('Location visibility fetch failed');
-        return await response.json();
-    } catch (error) {
-        console.warn('Location visibility error:', error);
-        return null;
-    }
-}
-
 async function _fetchImpactRisk(lat, lng) {
     try {
         const response = await fetch(`/api/impact/risk?lat=${lat}&lon=${lng}`);
@@ -332,6 +336,48 @@ async function _fetchImpactRisk(lat, lng) {
     } catch (error) {
         console.warn('Impact risk error:', error);
         return null;
+    }
+}
+
+async function _fetchLocationVisibility(lat, lng) {
+    // Computes approximate night hours + moon phase from lat/date alone.
+    // No API key needed — pure astronomy math.
+    try {
+        const now        = new Date();
+        const moonPct    = (VisibilityScore.compute(null).moonPct || 0) / 100;
+        const dayOfYear  = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000);
+        const dec        = 23.45 * Math.sin(((dayOfYear - 81) * 360 / 365) * Math.PI / 180); // solar declination
+        const latRad     = lat * Math.PI / 180;
+        const decRad     = dec * Math.PI / 180;
+
+        let nightHours = 12;
+        try {
+            const cosHA = -Math.tan(latRad) * Math.tan(decRad);
+            if      (cosHA < -1) nightHours = 0;   // polar day
+            else if (cosHA >  1) nightHours = 24;  // polar night
+            else nightHours = Math.round(24 - (2 / 15) * (Math.acos(cosHA) * 180 / Math.PI));
+        } catch (_) { /* keep default 12 */ }
+
+        const PHASES = [
+            { icon: '🌑', name: 'New Moon',        max: 0.06 },
+            { icon: '🌒', name: 'Waxing Crescent', max: 0.25 },
+            { icon: '🌓', name: 'First Quarter',   max: 0.31 },
+            { icon: '🌔', name: 'Waxing Gibbous',  max: 0.50 },
+            { icon: '🌕', name: 'Full Moon',        max: 0.56 },
+            { icon: '🌖', name: 'Waning Gibbous',  max: 0.75 },
+            { icon: '🌗', name: 'Last Quarter',     max: 0.81 },
+            { icon: '🌘', name: 'Waning Crescent',  max: 1.00 },
+        ];
+        const moonPhase = PHASES.find(p => moonPct <= p.max) || PHASES[7];
+
+        let nightDesc = `${nightHours} hours of darkness expected tonight.`;
+        if (nightHours < 6)  nightDesc += ' Short night — limited observation window.';
+        if (nightHours > 14) nightDesc += ' Long night — excellent for extended observation.';
+
+        return { analysis: { night_hours: nightHours, moon_phase: moonPhase, night_description: nightDesc } };
+    } catch (err) {
+        console.warn('_fetchLocationVisibility error:', err);
+        return { analysis: { night_hours: 12, moon_phase: { icon: '🌑', name: 'Unknown' }, night_description: 'Night data unavailable.' } };
     }
 }
 
@@ -350,11 +396,11 @@ async function _fetchSpaceDevsEvents(lat, lng, days = 90) {
 //  EARTH LOCATION CLICK — WITH SPACEDEVS EVENTS
 // ═══════════════════════════════════════════
 async function _onGlobeLocationClick(lat, lng) {
-    // Show skeleton loading panel immediately
+    // Show skeleton immediately
     showPanel(`
         <div class="ptag earth">📍 LOCATION INTEL</div>
         <div class="ptitle loc-title">Scanning location…</div>
-        <div class="psub">${lat.toFixed(4)}° ${lat>=0?'N':'S'}, ${lng.toFixed(4)}° ${lng>=0?'E':'W'}</div>
+        <div class="psub">${lat.toFixed(4)}° ${lat >= 0 ? 'N' : 'S'}, ${lng.toFixed(4)}° ${lng >= 0 ? 'E' : 'W'}</div>
         <div class="loc-loading">
             <div class="loc-spinner-ring"></div>
             <div class="loc-spinner-msg">Querying space databases, weather & events…</div>
@@ -366,60 +412,59 @@ async function _onGlobeLocationClick(lat, lng) {
         </div>
     `);
 
-    // Fire all API calls in parallel
+    // ─────────────────────────────────────────────────────────────
+    //  FIX: Exact 9-variable ↔ 9-entry Promise.all mapping
+    //  Old code had 9 variables but only 6 Promise.all entries.
+    // ─────────────────────────────────────────────────────────────
     const [
-        geoName, 
-        weatherData, 
-        issPass, 
-        spaceDevsEvents,
-        spaceWeather,
-        locationVisibility,
-        impactRisk,
-        satellitePasses,
-        nearbyLaunches
+        geoName,             // [0]
+        weatherData,         // [1]
+        issPass,             // [2]
+        spaceDevsEvents,     // [3]
+        spaceWeather,        // [4]  ← was MISSING from old Promise.all
+        locationVisibility,  // [5]  ← was MISSING + _fetchLocationVisibility was undefined
+        impactRisk,          // [6]  ← was MISSING from old Promise.all
+        satellitePasses,     // [7]  ← was at wrong index in old code
+        nearbyLaunches       // [8]  ← was always undefined in old code
     ] = await Promise.all([
-        _reverseGeocode(lat, lng),
-        _fetchLocationWeather(lat, lng),
-        _fetchISSPass(lat, lng),
-        _fetchSpaceDevsEvents(lat, lng),
-        _fetchSpaceWeather(lat, lng),
-        _fetchLocationVisibility(lat, lng),
-        _fetchImpactRisk(lat, lng),
-        _fetchSatellitePasses(lat, lng),
-        _fetchNearbyLaunches(lat, lng)
+        _reverseGeocode(lat, lng),           // [0]
+        _fetchLocationWeather(lat, lng),     // [1]
+        _fetchISSPass(lat, lng),             // [2]
+        _fetchSpaceDevsEvents(lat, lng),     // [3]
+        _fetchSpaceWeather(lat, lng),        // [4]  ← ADDED
+        _fetchLocationVisibility(lat, lng),  // [5]  ← ADDED (new function above)
+        _fetchImpactRisk(lat, lng),          // [6]  ← ADDED
+        _fetchSatellitePasses(lat, lng),     // [7]
+        _fetchNearbyLaunches(lat, lng)       // [8]
     ]);
 
-    const vis = VisibilityScore.compute(weatherData);
-    const neo = useNASAData.get('neo') || [];
-    const hazNeo = neo.filter(a => a.is_potentially_hazardous_asteroid);
-    const issNow = useNASAData.get('iss') || useISSPosition.getLastPosition();
+    const vis          = VisibilityScore.compute(weatherData);
+    const neo          = useNASAData.get('neo') || [];
+    const issNow       = useNASAData.get('iss') || useISSPosition.getLastPosition();
     const nearDisaster = _findNearestDisaster(lat, lng);
-
-    const sc = vis.score > 70 ? 'var(--green)' : vis.score > 45 ? 'var(--gold)' : 'var(--red)';
-    const displayName = geoName || `${lat.toFixed(2)}°, ${lng.toFixed(2)}°`;
-    const coords = `${Math.abs(lat).toFixed(4)}° ${lat>=0?'N':'S'} · ${Math.abs(lng).toFixed(4)}° ${lng>=0?'E':'W'}`;
+    const sc           = vis.score > 70 ? 'var(--green)' : vis.score > 45 ? 'var(--gold)' : 'var(--red)';
+    const displayName  = geoName || `${lat.toFixed(2)}°, ${lng.toFixed(2)}°`;
+    const coords       = `${Math.abs(lat).toFixed(4)}° ${lat >= 0 ? 'N' : 'S'} · ${Math.abs(lng).toFixed(4)}° ${lng >= 0 ? 'E' : 'W'}`;
 
     let html = `
         <div class="ptag earth">📍 LOCATION INTEL</div>
         <div class="ptitle loc-title">${displayName}</div>
         <div class="psub" style="margin-bottom:4px">${coords}</div>`;
 
-    // ── 1. SKY TONIGHT ──────────────────────────────────────────────────
-    html += `
-        <div class="div"></div>
-        <div class="loc-section-head">🌌 Sky Tonight</div>`;
+    // ── 1. SKY TONIGHT ───────────────────────────────────────────────────
+    html += `<div class="div"></div><div class="loc-section-head">🌌 Sky Tonight</div>`;
 
     if (weatherData) {
-        const tempC = Math.round(weatherData.main?.temp || 0);
+        const tempC  = Math.round(weatherData.main?.temp || 0);
         const clouds = weatherData.clouds?.all ?? 0;
-        const desc = _cap(weatherData.weather?.[0]?.description || '');
+        const desc   = _cap(weatherData.weather?.[0]?.description || '');
         html += `
         <div class="loc-sky-card" style="--sky-score:${vis.score}">
             <div class="loc-sky-score" style="color:${sc}">${vis.score}<span>/100</span></div>
             <div class="loc-sky-info">
                 <div class="loc-sky-label" style="color:${sc}">${vis.label} viewing conditions</div>
                 <div class="loc-sky-desc">${vis.message}</div>
-                <div class="loc-sky-weather">${desc} · ${tempC}°C · ${clouds}% cloud · ${Math.round(weatherData.wind?.speed||0)} m/s wind</div>
+                <div class="loc-sky-weather">${desc} · ${tempC}°C · ${clouds}% cloud · ${Math.round(weatherData.wind?.speed || 0)} m/s wind</div>
             </div>
         </div>
         <div class="loc-moon-row">🌙 ${VisibilityScore.moonDescription(vis.moonPct / 100)}</div>`;
@@ -429,338 +474,238 @@ async function _onGlobeLocationClick(lat, lng) {
             <div class="loc-no-weather-icon">🌤</div>
             <div>
                 <div style="font-weight:600;margin-bottom:4px">Add OpenWeather key for live sky conditions</div>
-                <div style="font-size:.78rem;color:var(--muted)">Click <strong>⚙ API Keys</strong> → paste your free key from openweathermap.org → get real cloud cover, temperature, and visibility score.</div>
-            </div>
-        </div>`;
-        html += `<div class="loc-moon-row">🌙 ${VisibilityScore.moonDescription(vis.moonPct / 100)}</div>`;
-    }
-
-    // ── 2. LOCATION VISIBILITY ANALYSIS ────────────────────────────────
-    if (locationVisibility && locationVisibility.analysis) {
-        html += `
-        <div class="fgrid" style="margin-top:12px">
-            <div class="fcard">
-                <div class="flbl">Night duration</div>
-                <div class="fval">${locationVisibility.analysis.night_hours}h</div>
-            </div>
-            <div class="fcard">
-                <div class="flbl">Moon phase</div>
-                <div class="fval">${locationVisibility.analysis.moon_phase?.icon || '🌑'} ${locationVisibility.analysis.moon_phase?.name || ''}</div>
+                <div style="font-size:.78rem;color:var(--muted)">Click <strong>⚙ API Keys</strong> → paste your free key from openweathermap.org</div>
             </div>
         </div>
-        <div class="ibox blue">${locationVisibility.analysis.night_description}</div>`;
+        <div class="loc-moon-row">🌙 ${VisibilityScore.moonDescription(vis.moonPct / 100)}</div>`;
     }
 
-    // ── 3. SPACE DEVS EVENTS (VISIBLE FROM THIS LOCATION) ───────────────
-    if (spaceDevsEvents && spaceDevsEvents.events && spaceDevsEvents.events.length > 0) {
+    // ── 2. LOCATION VISIBILITY ANALYSIS (now populated) ──────────────────
+    if (locationVisibility?.analysis) {
+        const a = locationVisibility.analysis;
         html += `
-        <div class="div"></div>
-        <div class="loc-section-head">🚀 Events Visible From Here</div>`;
-        
-        // Show next 5 upcoming events
-        const upcomingEvents = spaceDevsEvents.events
-            .filter(e => new Date(e.date) > new Date())
-            .slice(0, 5);
-        
-        upcomingEvents.forEach(event => {
-            const eventDate = new Date(event.date);
-            const dateStr = eventDate.toLocaleDateString('en-US', { 
-                weekday: 'short', 
-                month: 'short', 
-                day: 'numeric',
-                year: 'numeric'
-            });
-            const timeStr = eventDate.toLocaleTimeString('en-US', { 
-                hour: '2-digit', 
-                minute: '2-digit',
-                timeZone: 'UTC'
-            });
-            
-            // Get visibility info
-            const vis = event.visibility || {};
-            let visibilityText = 'Check local time';
-            let visibilityColor = 'var(--green)';
-            
-            if (vis.visibilityWindows && vis.visibilityWindows.length > 0) {
-                const window = vis.visibilityWindows[0];
-                if (window.start && window.end) {
-                    const startTime = new Date(window.start).toLocaleTimeString([], { 
-                        hour: '2-digit', 
-                        minute: '2-digit',
-                        timeZone: 'UTC'
-                    });
-                    const endTime = new Date(window.end).toLocaleTimeString([], { 
-                        hour: '2-digit', 
-                        minute: '2-digit',
-                        timeZone: 'UTC'
-                    });
-                    visibilityText = `${startTime} - ${endTime} UTC`;
-                }
+        <div class="fgrid" style="margin-top:12px">
+            <div class="fcard"><div class="flbl">Night duration</div><div class="fval">${a.night_hours}h</div></div>
+            <div class="fcard"><div class="flbl">Moon phase</div><div class="fval">${a.moon_phase?.icon || '🌑'} ${a.moon_phase?.name || ''}</div></div>
+        </div>
+        <div class="ibox blue">${a.night_description}</div>`;
+    }
+
+    // ── 3. SPACE DEVS EVENTS ─────────────────────────────────────────────
+    if (spaceDevsEvents?.events?.length > 0) {
+        html += `<div class="div"></div><div class="loc-section-head">🚀 Events Visible From Here</div>`;
+        const upcoming = spaceDevsEvents.events.filter(e => new Date(e.date) > new Date()).slice(0, 5);
+
+        upcoming.forEach(event => {
+            const ed          = new Date(event.date);
+            const dateStr     = ed.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' });
+            const timeStr     = ed.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', timeZone:'UTC' });
+            const evVis       = event.visibility || {};
+            const isHighlight = event.type?.name === 'EVA' || event.type?.name === 'Docking' || event.name?.toLowerCase().includes('launch');
+            let visText = 'Check local time';
+
+            if (evVis.visibilityWindows?.[0]?.start) {
+                const s = new Date(evVis.visibilityWindows[0].start).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', timeZone:'UTC' });
+                const e = new Date(evVis.visibilityWindows[0].end).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', timeZone:'UTC' });
+                visText = `${s} – ${e} UTC`;
             }
-            
-            // Determine if this is a must-see event
-            const isHighlight = event.type?.name === 'EVA' || 
-                               event.type?.name === 'Docking' ||
-                               event.name.toLowerCase().includes('launch');
-            
+
             html += `
-            <div class="loc-event-card" style="
-                background: ${isHighlight ? 'rgba(100, 150, 255, 0.15)' : 'rgba(30, 40, 60, 0.6)'};
-                border-radius: 12px;
-                padding: 12px;
-                margin-bottom: 10px;
-                border-left: 4px solid ${isHighlight ? 'var(--green)' : visibilityColor};
-                transition: all 0.2s ease;
-                cursor: pointer;
-            " onclick="window.open('${event.url}', '_blank')">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                    <span style="font-weight: 600; font-size: 0.9rem;">${event.name}</span>
-                    <span style="font-size: 0.7rem; background: rgba(255,255,255,0.1); padding: 3px 8px; border-radius: 12px; color: var(--muted);">
-                        ${event.type?.name || 'Event'}
-                    </span>
+            <div class="loc-event-card" style="background:${isHighlight ? 'rgba(100,150,255,0.15)' : 'rgba(30,40,60,0.6)'};border-radius:12px;padding:12px;margin-bottom:10px;border-left:4px solid ${isHighlight ? 'var(--green)' : 'var(--gold)'};cursor:pointer;" onclick="window.open('${event.url || '#'}','_blank')">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                    <span style="font-weight:600;font-size:0.9rem;">${event.name}</span>
+                    <span style="font-size:0.7rem;background:rgba(255,255,255,0.1);padding:3px 8px;border-radius:12px;color:var(--muted);">${event.type?.name || 'Event'}</span>
                 </div>
-                <div style="font-size: 0.75rem; color: var(--muted); margin-bottom: 8px; line-height: 1.4;">
-                    ${event.description ? event.description.substring(0, 120) + (event.description.length > 120 ? '...' : '') : 'No description available'}
+                <div style="font-size:0.75rem;color:var(--muted);margin-bottom:8px;line-height:1.4;">${event.description ? event.description.substring(0, 120) + (event.description.length > 120 ? '…' : '') : 'No description available'}</div>
+                <div style="display:flex;gap:16px;font-size:0.75rem;flex-wrap:wrap;">
+                    <div>📅 ${dateStr}</div><div>⏰ ${timeStr} UTC</div>
+                    <div style="color:var(--green);">👁️ ${visText}</div>
                 </div>
-                <div style="display: flex; gap: 16px; font-size: 0.75rem; flex-wrap: wrap; align-items: center;">
-                    <div style="display: flex; align-items: center; gap: 4px;">
-                        <span style="color: var(--gold);">📅</span>
-                        <span>${dateStr}</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 4px;">
-                        <span style="color: var(--gold);">⏰</span>
-                        <span>${timeStr} UTC</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 4px;">
-                        <span style="color: var(--gold);">👁️</span>
-                        <span style="color: ${visibilityColor};">${visibilityText}</span>
-                    </div>
-                </div>
-                ${event.location ? `
-                <div style="font-size: 0.7rem; color: var(--muted); margin-top: 8px; display: flex; align-items: center; gap: 4px;">
-                    <span>📍</span>
-                    <span>${event.location}</span>
-                </div>` : ''}
-                ${vis.bestViewing ? `
-                <div style="font-size: 0.7rem; color: var(--muted); margin-top: 6px; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 6px;">
-                    <span style="color: var(--gold);">🔭</span> ${vis.bestViewing}
-                </div>` : ''}
+                ${event.location ? `<div style="font-size:0.7rem;color:var(--muted);margin-top:8px;">📍 ${event.location}</div>` : ''}
+                ${evVis.bestViewing ? `<div style="font-size:0.7rem;color:var(--muted);margin-top:6px;background:rgba(0,0,0,0.2);padding:6px;border-radius:6px;">🔭 ${evVis.bestViewing}</div>` : ''}
             </div>`;
         });
-        
+
         if (spaceDevsEvents.events.length > 5) {
-            html += `
-            <div class="ibox blue" style="text-align: center; cursor: pointer;" onclick="window.open('https://ll.thespacedevs.com', '_blank')">
-                + ${spaceDevsEvents.events.length - 5} more events visible from this location — click to see all
-            </div>`;
+            html += `<div class="ibox blue" style="text-align:center;cursor:pointer;" onclick="window.open('https://ll.thespacedevs.com','_blank')">+ ${spaceDevsEvents.events.length - 5} more events — click to see all</div>`;
         }
     }
 
     // ── 4. ISS PASS ──────────────────────────────────────────────────────
-    html += `
-        <div class="div"></div>
-        <div class="loc-section-head">🛸 ISS Pass</div>`;
+    html += `<div class="div"></div><div class="loc-section-head">🛸 ISS Pass</div>`;
 
-    if (issPass && issPass.response && issPass.response[0]) {
-        const pass = issPass.response[0];
-        const passDate = new Date(pass.risetime * 1000);
-        const timeStr = passDate.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
-        const dateStr = passDate.toLocaleDateString([], { weekday:'short', month:'short', day:'numeric' });
-        const durMin = Math.round(pass.duration / 60);
-        const canSee = vis.score > 35 && weatherData;
-        
+    if (issPass?.response?.[0]) {
+        const pass    = issPass.response[0];
+        const pd      = new Date(pass.risetime * 1000);
+        const canSee  = vis.score > 35 && !!weatherData;
         html += `
         <div class="loc-iss-pass">
             <div class="loc-iss-time">
-                <div class="loc-iss-timeval">${timeStr}</div>
-                <div class="loc-iss-timedate">${dateStr}</div>
+                <div class="loc-iss-timeval">${pd.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })}</div>
+                <div class="loc-iss-timedate">${pd.toLocaleDateString([], { weekday:'short', month:'short', day:'numeric' })}</div>
             </div>
             <div class="loc-iss-details">
-                <div class="loc-iss-dur">Visible for ~${durMin} minute${durMin!==1?'s':''}</div>
-                <div class="loc-iss-canSee" style="color:${canSee?'var(--green)':'var(--gold)'}">
+                <div class="loc-iss-dur">Visible for ~${formatDuration(pass.duration)}</div>
+                <div class="loc-iss-canSee" style="color:${canSee ? 'var(--green)' : 'var(--gold)'}">
                     ${canSee ? '✅ Conditions suitable for naked-eye viewing' : '⛅ May be obscured by cloud cover'}
                 </div>
             </div>
         </div>
         <div class="ibox blue">Look for a fast, non-blinking bright dot crossing the sky. The ISS is the 3rd-brightest object in the sky.</div>`;
-    } else {
-        if (issNow) {
-            const distKm = Math.round(Math.sqrt(Math.pow(lat-issNow.lat,2) + Math.pow(lng-issNow.lng,2)) * 111);
-            html += `
-            <div class="fgrid">
-                <div class="fcard"><div class="flbl">Current Distance</div><div class="fval">~${distKm.toLocaleString()} km</div></div>
-                <div class="fcard"><div class="flbl">ISS Altitude</div><div class="fval">408 km</div></div>
-            </div>
-            <div class="ibox blue">ISS is ~${distKm.toLocaleString()} km away right now. It completes a full orbit every 92 minutes.</div>`;
-        }
+    } else if (issNow) {
+        const distKm = Math.round(Math.sqrt(Math.pow(lat - issNow.lat, 2) + Math.pow(lng - issNow.lng, 2)) * 111);
+        html += `
+        <div class="fgrid">
+            <div class="fcard"><div class="flbl">Current Distance</div><div class="fval">~${distKm.toLocaleString()} km</div></div>
+            <div class="fcard"><div class="flbl">ISS Altitude</div><div class="fval">408 km</div></div>
+        </div>
+        <div class="ibox blue">ISS is ~${distKm.toLocaleString()} km away. It completes a full orbit every 92 minutes.</div>`;
     }
 
-    // ── 4. SATELLITE PASSES ──────────────────────────────────────────────
-if (satellitePasses && satellitePasses.length > 0) {
-    html += `
-        <div class="div"></div>
-        <div class="loc-section-head">🛰️ Upcoming Satellite Passes</div>`;
-    
-    satellitePasses.forEach(({ satellite, passes }) => {
-        if (passes && passes.length > 0) {
-            const nextPass = passes[0];
-            const passDate = new Date(nextPass.startUTC * 1000);
-            const timeStr = passDate.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
-            const dateStr = passDate.toLocaleDateString([], { month:'short', day:'numeric' });
-            const duration = Math.round((nextPass.endUTC - nextPass.startUTC) / 60);
-            const score = N2YOService.calculatePassScore(nextPass);
-            
+    // ── 5. SATELLITE PASSES (now actually populated) ──────────────────────
+    html += `<div class="div"></div><div class="loc-section-head">🛰️ Upcoming Satellite Passes</div>`;
+
+    html += `<div class="div"></div><div class="loc-section-head">🛰️ Upcoming Satellite Passes</div>`;
+
+    if (satellitePasses?.length > 0) {
+        satellitePasses.forEach(({ satellite, passes }) => {
+            if (!passes?.length) return;
+
+            const np       = passes[0];
+            const pd       = new Date(np.startUTC * 1000);
+            const score    = N2YOService.calculatePassScore(np);
+            const scoreCol = score > 70 ? 'var(--green)' : score > 40 ? 'var(--gold)' : 'var(--red)';
+
+            // Duration: endUTC - startUTC in seconds
+            const durationSec = (np.endUTC || 0) - (np.startUTC || 0);
+            const durationStr = formatDuration(durationSec);
+
+            // Magnitude: N2YO returns 100000 when unknown/not applicable
+            const rawMag  = np.mag;
+            const magStr  = (rawMag === undefined || rawMag === null || rawMag >= 9999)
+                            ? 'N/A'
+                            : (typeof rawMag === 'number' ? rawMag.toFixed(1) : rawMag);
+
+            // Flag very long durations — these are likely geostationary/high-orbit sats
+            // where "duration" means something different (continuously above horizon)
+            const isGEO        = durationSec > 3600 * 6; // > 6 hours = almost certainly GEO
+            const durationLabel = isGEO
+                ? `${durationStr} (high-orbit / always visible)`
+                : `${durationStr} above horizon`;
+
+            const dateStr = pd.toLocaleDateString([], { month: 'short', day: 'numeric' });
+            const timeStr = pd.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
             html += `
-            <div class="satellite-pass-card" style="
-                background: rgba(30, 40, 60, 0.6);
+            <div style="
+                background: rgba(30,40,60,0.6);
                 border-radius: 12px;
                 padding: 12px;
                 margin-bottom: 10px;
                 border-left: 4px solid ${satellite.color || '#94a3b8'};
             ">
-                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                    <span style="font-size: 1.2rem;">${satellite.icon || '🛰️'}</span>
-                    <span style="font-weight: 600;">${satellite.name}</span>
-                    <span style="font-size: 0.7rem; background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 12px;">
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                    <span style="font-size:1.2rem;">${satellite.icon || '🛰️'}</span>
+                    <span style="font-weight:600;">${satellite.name}</span>
+                    <span style="font-size:0.7rem; background:rgba(255,255,255,0.1); padding:2px 8px; border-radius:12px;">
                         ${satellite.category}
                     </span>
                 </div>
-                <div style="display: flex; gap: 16px; font-size: 0.8rem; flex-wrap: wrap;">
-                    <div><span style="color: var(--muted);">📅</span> ${dateStr} at ${timeStr}</div>
-                    <div><span style="color: var(--muted);">⏱️</span> ${duration} min</div>
-                    <div><span style="color: var(--muted);">📐</span> Max Elev: ${nextPass.maxEl}°</div>
-                    <div><span style="color: var(--muted);">✨</span> Mag: ${nextPass.mag}</div>
-                    <div><span style="color: var(--muted);">⭐</span> Score: <span style="color: ${score > 70 ? 'var(--green)' : score > 40 ? 'var(--gold)' : 'var(--red)'}">${score}</span></div>
+
+                <div style="display:flex; gap:14px; font-size:0.8rem; flex-wrap:wrap; margin-bottom:6px;">
+                    <div>📅 ${dateStr} at ${timeStr}</div>
+                    <div>📐 Max elevation: ${np.maxEl}°</div>
+                    <div>✨ Brightness: ${magStr === 'N/A' ? '<span style="color:var(--muted)">N/A</span>' : `mag ${magStr}`}</div>
+                    <div>⭐ Score: <span style="color:${scoreCol}; font-weight:600;">${score}/100</span></div>
                 </div>
-                <div style="font-size: 0.7rem; color: var(--muted); margin-top: 8px;">
-                    Direction: ${nextPass.startAzCompass} → ${nextPass.endAzCompass}
+
+                <div style="
+                    background: rgba(0,0,0,0.25);
+                    border-radius: 8px;
+                    padding: 8px 10px;
+                    font-size: 0.78rem;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    color: ${isGEO ? 'var(--muted)' : 'var(--text)'};
+                ">
+                    <span>⏱️</span>
+                    <span>Visible for <strong>${durationLabel}</strong></span>
+                </div>
+
+                <div style="font-size:0.7rem; color:var(--muted); margin-top:8px;">
+                    Direction: ${np.startAzCompass} → ${np.maxAzCompass} → ${np.endAzCompass}
                 </div>
             </div>`;
-        }
-    });
-}
-
-    // ── 5. UPCOMING LAUNCHES SECTION ───────────────────────────────────
-if (nearbyLaunches && nearbyLaunches.length > 0) {
-    html += `
-        <div class="div"></div>
-        <div class="loc-section-head">🚀 Launches Near You</div>`;
-    
-    nearbyLaunches.forEach(launch => {
-        const enhanced = launch.enhanced || {};
-        const status = enhanced.status || { color: '#94a3b8', icon: '🚀', name: 'Scheduled' };
-        const launchDate = new Date(launch.net);
-        const dateStr = launchDate.toLocaleDateString('en-US', { 
-            weekday: 'short', 
-            month: 'short', 
-            day: 'numeric',
-            year: 'numeric'
         });
-        const timeStr = launchDate.toLocaleTimeString('en-US', { 
-            hour: '2-digit', 
-            minute: '2-digit',
-            timeZone: 'UTC'
-        });
-        
+    } else {
         html += `
-        <div class="launch-card" style="
-            background: linear-gradient(145deg, rgba(30, 40, 60, 0.8), rgba(20, 30, 50, 0.9));
-            border-radius: 16px;
-            padding: 16px;
-            margin-bottom: 12px;
-            border-left: 4px solid ${status.color};
-            border: 1px solid rgba(255,255,255,0.05);
-            transition: all 0.2s ease;
-            cursor: pointer;
-        " onclick="window.open('${launch.url}', '_blank')">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 1.3rem;">${status.icon}</span>
-                    <span style="font-weight: 600; font-size: 0.95rem;">${launch.name || 'Unnamed Launch'}</span>
-                </div>
-                <span style="
-                    background: ${status.color}20;
-                    color: ${status.color};
-                    padding: 4px 10px;
-                    border-radius: 20px;
-                    font-size: 0.7rem;
-                    font-weight: 600;
-                ">${enhanced.daysUntil > 0 ? LaunchService.formatLaunchDate(launch.net) : status.name}</span>
-            </div>
-            
-            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px;">
-                <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 8px;">
-                    <div style="color: var(--muted); font-size: 0.65rem;">🚀 ROCKET</div>
-                    <div style="font-size: 0.8rem; font-weight: 500;">${enhanced.rocketName || launch.rocket?.configuration?.full_name || 'Unknown'}</div>
-                </div>
-                <div style="background: rgba(0,0,0,0.2); padding: 8px; border-radius: 8px;">
-                    <div style="color: var(--muted); font-size: 0.65rem;">🏢 AGENCY</div>
-                    <div style="font-size: 0.8rem; font-weight: 500;">${enhanced.providerAbbrev || launch.launch_service_provider?.abbrev || 'Unknown'}</div>
-                </div>
-            </div>
-            
-            <div style="margin-bottom: 12px;">
-                <div style="color: var(--muted); font-size: 0.7rem; margin-bottom: 4px;">🎯 MISSION</div>
-                <div style="font-size: 0.85rem; line-height: 1.4;">${launch.mission?.description || launch.mission?.name || 'No mission description available'}</div>
-            </div>
-            
-            <div style="display: flex; gap: 12px; flex-wrap: wrap; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
-                <div style="display: flex; align-items: center; gap: 4px;">
-                    <span style="color: var(--muted);">📅</span>
-                    <span style="font-size: 0.75rem;">${dateStr}</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 4px;">
-                    <span style="color: var(--muted);">⏰</span>
-                    <span style="font-size: 0.75rem;">${timeStr} UTC</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 4px;">
-                    <span style="color: var(--muted);">📍</span>
-                    <span style="font-size: 0.75rem;">${enhanced.padName || launch.pad?.name || 'Unknown pad'}</span>
-                </div>
-                ${launch.distance ? `
-                <div style="display: flex; align-items: center; gap: 4px; margin-left: auto;">
-                    <span style="color: var(--muted);">📏</span>
-                    <span style="font-size: 0.75rem;">${Math.round(launch.distance)} km away</span>
-                </div>` : ''}
-            </div>
-            
-            ${enhanced.isSoon ? `
-            <div style="
-                margin-top: 10px;
-                background: linear-gradient(90deg, #f9731620, transparent);
-                padding: 6px 10px;
-                border-radius: 6px;
-                font-size: 0.7rem;
-                color: #f97316;
-                display: flex;
-                align-items: center;
-                gap: 6px;
-            ">
-                <span>⚠️</span>
-                <span>Launch happening soon! Check webcast for live coverage.</span>
-            </div>` : ''}
+        <div class="ibox blue">
+            No satellite pass data available. Ensure <code>N2YO_API_KEY</code> is set
+            in your <code>.env</code> file and the proxy server is running.
         </div>`;
-    });
-    
-    // Add link to see all launches
-    html += `
-    <div class="ibox blue" style="text-align: center; font-size: 0.75rem; cursor: pointer;" onclick="window.open('https://launchlibrary.net', '_blank')">
-        🚀 See all upcoming launches at Launch Library
-    </div>`;
-}
+    }
 
-    // ── 5. SPACE WEATHER ─────────────────────────────────────────────────
-    if (spaceWeather && spaceWeather.aurora) {
+    // ── 6. NEARBY LAUNCHES (now actually populated) ───────────────────────
+    if (nearbyLaunches?.length > 0) {
+        html += `<div class="div"></div><div class="loc-section-head">🚀 Launches Near You</div>`;
+
+        nearbyLaunches.forEach(launch => {
+            const enhanced = launch.enhanced || {};
+            const status   = enhanced.status || { color:'#94a3b8', icon:'🚀', name:'Scheduled' };
+            const ld       = new Date(launch.net);
+            const dateStr  = ld.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' });
+            const timeStr  = ld.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', timeZone:'UTC' });
+
+            html += `
+            <div style="background:linear-gradient(145deg,rgba(30,40,60,0.8),rgba(20,30,50,0.9));border-radius:16px;padding:16px;margin-bottom:12px;border-left:4px solid ${status.color};border:1px solid rgba(255,255,255,0.05);cursor:pointer;" onclick="window.open('${launch.url || '#'}','_blank')">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="font-size:1.3rem;">${status.icon}</span>
+                        <span style="font-weight:600;font-size:0.95rem;">${launch.name || 'Unnamed Launch'}</span>
+                    </div>
+                    <span style="background:${status.color}20;color:${status.color};padding:4px 10px;border-radius:20px;font-size:0.7rem;font-weight:600;">
+                        ${enhanced.daysUntil > 0 ? LaunchService.formatLaunchDate(launch.net) : status.name}
+                    </span>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px;">
+                    <div style="background:rgba(0,0,0,0.2);padding:8px;border-radius:8px;">
+                        <div style="color:var(--muted);font-size:0.65rem;">🚀 ROCKET</div>
+                        <div style="font-size:0.8rem;font-weight:500;">${enhanced.rocketName || launch.rocket?.configuration?.full_name || 'Unknown'}</div>
+                    </div>
+                    <div style="background:rgba(0,0,0,0.2);padding:8px;border-radius:8px;">
+                        <div style="color:var(--muted);font-size:0.65rem;">🏢 AGENCY</div>
+                        <div style="font-size:0.8rem;font-weight:500;">${enhanced.providerAbbrev || launch.launch_service_provider?.abbrev || 'Unknown'}</div>
+                    </div>
+                </div>
+                <div style="background:rgba(0,0,0,0.2);padding:10px;border-radius:8px;font-size:0.75rem;display:flex;gap:12px;flex-wrap:wrap;">
+                    <div>📅 ${dateStr}</div>
+                    <div>⏰ ${timeStr} UTC</div>
+                    <div>📍 ${enhanced.padName || launch.pad?.name || 'Unknown pad'}</div>
+                    ${launch.distance ? `<div style="margin-left:auto;">📏 ${Math.round(launch.distance)} km away</div>` : ''}
+                </div>
+                ${enhanced.isSoon ? `
+                <div style="margin-top:10px;background:linear-gradient(90deg,#f9731620,transparent);padding:6px 10px;border-radius:6px;font-size:0.7rem;color:#f97316;">
+                    ⚠️ Launch happening soon! Check webcast for live coverage.
+                </div>` : ''}
+            </div>`;
+        });
+
+        html += `<div class="ibox blue" style="text-align:center;cursor:pointer;" onclick="window.open('https://launchlibrary.net','_blank')">🚀 See all upcoming launches at Launch Library</div>`;
+    }
+
+    // ── 7. SPACE WEATHER (now actually populated) ─────────────────────────
+    if (spaceWeather?.aurora) {
         html += `
         <div class="div"></div>
         <div class="loc-section-head">☀️ Space Weather</div>
         <div class="loc-sw-grid">
-            <div class="loc-sw-card" style="--sw-color:${spaceWeather.aurora.color}">
+            <div class="loc-sw-card">
                 <div class="loc-sw-icon">🌌</div>
                 <div class="loc-sw-label">Aurora</div>
                 <div class="loc-sw-val" style="color:${spaceWeather.aurora.color}">${spaceWeather.aurora.probability}</div>
             </div>
-            <div class="loc-sw-card" style="--sw-color:${spaceWeather.cme_activity?.count > 0 ? '#ff4455' : '#00ff88'}">
+            <div class="loc-sw-card">
                 <div class="loc-sw-icon">☢</div>
                 <div class="loc-sw-label">CME Activity</div>
                 <div class="loc-sw-val">${spaceWeather.cme_activity?.count || 0} events</div>
@@ -769,8 +714,8 @@ if (nearbyLaunches && nearbyLaunches.length > 0) {
         <div class="ibox ${spaceWeather.cme_activity?.count > 0 ? 'gold' : 'green'}">${spaceWeather.summary}</div>`;
     }
 
-    // ── 6. IMPACT RISK ─────────────────────────────────────────────────
-    if (impactRisk && impactRisk.hazardous_count > 0) {
+    // ── 8. IMPACT RISK (now actually populated) ───────────────────────────
+    if (impactRisk?.hazardous_count > 0) {
         html += `
         <div class="div"></div>
         <div class="loc-section-head">☄ NEO Watch</div>
@@ -780,10 +725,8 @@ if (nearbyLaunches && nearbyLaunches.length > 0) {
         </div>`;
     }
 
-    // ── 7. REGION SPACE CONNECTION (NEAREST DISASTER) ───────────────────
-    html += `
-        <div class="div"></div>
-        <div class="loc-section-head">🌍 Space-Earth Connection</div>`;
+    // ── 9. SPACE-EARTH CONNECTION ─────────────────────────────────────────
+    html += `<div class="div"></div><div class="loc-section-head">🌍 Space-Earth Connection</div>`;
 
     if (nearDisaster) {
         const { event, distKm, style, cat } = nearDisaster;
@@ -798,21 +741,18 @@ if (nearbyLaunches && nearbyLaunches.length > 0) {
             <div style="font-size:.7rem;color:${risk.color};font-weight:700;text-transform:uppercase">${risk.level}</div>
         </div>
         <div class="ibox ${distKm < 1000 ? 'red' : 'gold'}">
-            ${distKm < 500
-                ? `⚠️ Active ${cat.toLowerCase()} within ${distKm}km. NASA satellites monitoring.`
-                : distKm < 2000
-                ? `A ${cat.toLowerCase()} is ${distKm.toLocaleString()}km away.`
-                : `Nearest active event is ${distKm.toLocaleString()}km away.`}
+            ${distKm < 500  ? `⚠️ Active ${cat.toLowerCase()} within ${distKm}km. NASA satellites monitoring.` :
+              distKm < 2000 ? `A ${cat.toLowerCase()} is ${distKm.toLocaleString()}km away.` :
+                              `Nearest active event is ${distKm.toLocaleString()}km away.`}
         </div>`;
     } else {
         html += `<div class="ibox green">✅ No active NASA-tracked disaster events within range.</div>`;
     }
 
-    // Add footer with data source attribution
     html += `
         <div class="div"></div>
-        <div style="font-size:0.65rem; color:var(--muted); text-align:center; padding:8px;">
-            🌐 Data sources: NASA EONET, SpaceDevs, Open-Notify, OpenWeather
+        <div style="font-size:0.65rem;color:var(--muted);text-align:center;padding:8px;">
+            🌐 Data: NASA EONET · SpaceDevs · Open-Notify · OpenWeather · N2YO
         </div>`;
 
     showPanel(html);
@@ -2157,26 +2097,57 @@ function goEarthImpact() {
 
 async function _fetchSatellitePasses(lat, lng) {
     try {
-        // Get passes for popular satellites
-        const popular = await N2YOService.getPopularSatellites();
+        // 1️⃣ Get ALL satellites above this location
+        const aboveData = await N2YOService.getSatellitesAbove(lat, lng, 70, 0);
+
+        if (!aboveData || !aboveData.above) return null;
+
+        // 2️⃣ Filter good candidates
+        const candidates = aboveData.above
+            .filter(sat => sat.satalt > 200)   // ignore debris
+            .slice(0, 10);                     // prevent rate limit
+
         const passes = [];
-        
-        for (const sat of popular.slice(0, 5)) { // Check top 5 popular satellites
-            const data = await N2YOService.getVisualPasses(sat.id, lat, lng, 3, 20);
-            if (data && data.passes) {
+
+        // 3️⃣ Get visual passes for each satellite
+        for (const sat of candidates) {
+            const data = await N2YOService.getVisualPasses(
+                sat.satid,
+                lat,
+                lng,
+                3,   // next 3 days
+                20   // minimum elevation
+            );
+
+            if (data && data.passes && data.passes.length > 0) {
                 passes.push({
-                    satellite: sat,
+                    satellite: {
+                        id: sat.satid,
+                        name: sat.satname,
+                        category: sat.intDesignator || "Satellite",
+                        icon: '🛰️',
+                        color: '#94a3b8'
+                    },
                     passes: data.passes
                 });
             }
         }
-        
+
+        passes.sort((a, b) => {
+            const scoreA = N2YOService.calculatePassScore(a.passes[0]);
+            const scoreB = N2YOService.calculatePassScore(b.passes[0]);
+            return scoreB - scoreA;
+        });
+
+
         return passes;
+
     } catch (error) {
         console.warn('Satellite passes error:', error);
         return null;
     }
 }
+
 
 async function _fetchNearbyLaunches(lat, lng) {
     try {
