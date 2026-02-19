@@ -661,8 +661,8 @@ app.post('/api/chat', async (req, res) => {
     },
     {
         headers: {
-            "Authorization": "Bearer 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",
-            "HTTP-Referer": "http://localhost:5000",
+            "Authorization": "Bearer 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",
+            "HTTP-Referer": "http://localhost:3000",
             "X-Title": "AstroView"
         }
     }
