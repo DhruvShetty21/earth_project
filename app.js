@@ -2155,6 +2155,40 @@ function goEarthImpact() {
     }
 }
 
+// ================= CHATBOT =================
+
+function initChatbot() {
+    const chatBox = document.getElementById('chatMessages');
+    const input   = document.getElementById('chatInput');
+    const button  = document.getElementById('chatSend');
+
+    button.addEventListener('click', async () => {
+        const msg = input.value.trim();
+        if (!msg) return;
+
+        chatBox.innerHTML += `<div class="chat-user">🧑 ${msg}</div>`;
+        input.value = '';
+
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+        const reply = await ChatService.send(msg);
+
+        const formatted = marked.parse(reply);
+
+chatBox.innerHTML += `
+    <div class="chat-ai">
+        <div class="chat-bubble">${formatted}</div>
+    </div>
+`;
+
+        chatBox.scrollTop = chatBox.scrollHeight;
+    });
+}
+
+// Initialize after page load
+window.addEventListener('DOMContentLoaded', initChatbot);
+
+
 async function _fetchSatellitePasses(lat, lng) {
     try {
         // Get passes for popular satellites

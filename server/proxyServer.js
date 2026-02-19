@@ -6,7 +6,7 @@ const express = require('express');
 const axios = require('axios');
 const path = require('path');
 const app = express();
-const port = 3000;
+const port = 5000;
 
 // Serve static files
 app.use(express.static(path.join(__dirname, '..')));
@@ -591,6 +591,47 @@ app.get('/api/eonet', async (req, res) => {
         });
     }
 });
+
+// Chatbot
+// ================== AI CHATBOT ENDPOINT ==================
+app.use(express.json());
+
+app.post('/api/chat', async (req, res) => {
+    try {
+        const { message } = req.body;
+
+        console.log("Incoming message:", message);
+
+        const response = await axios.post(
+    "https://openrouter.ai/api/v1/chat/completions",
+    {
+        model: "mistralai/mistral-7b-instruct",
+        messages: [
+            { role: "user", content: message }
+        ]
+    },
+    {
+        headers: {
+            "Authorization": "Bearer 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",
+            "HTTP-Referer": "http://localhost:5173",
+            "X-Title": "AstroView"
+        }
+    }
+);
+
+const reply = response.data.choices[0].message.content;
+
+
+        res.json({ reply });
+
+    } catch (err) {
+        console.error("FULL ERROR:", err.response?.data || err.message);
+        res.status(500).json({ error: "Chat failed" });
+    }
+});
+
+
+
 
 // ============= NASA EONET — SINGLE CATEGORY =============
 // Convenience route: /api/eonet/wildfires  /api/eonet/severeStorms  etc.
