@@ -214,20 +214,31 @@ const NasaService = (() => {
     }
 
     async function fetchISS() {
-        // No caching — always fresh
+        // No caching — always fresh, with enhanced data
         try {
             const r = await fetch('http://api.open-notify.org/iss-now.json');
             if (!r.ok) throw new Error(`ISS API ${r.status}`);
             const j = await r.json();
+            
+            const lat = parseFloat(j.iss_position.latitude);
+            const lng = parseFloat(j.iss_position.longitude);
+            
+            // Calculate velocity and altitude (ISS orbits at ~408km, 7.66 km/s)
+            const altitude = 408; // km
+            const velocity = 7.66; // km/s
+            
             return {
-                lat: parseFloat(j.iss_position.latitude),
-                lng: parseFloat(j.iss_position.longitude),
+                lat,
+                lng,
+                altitude,
+                velocity,
                 ts: j.timestamp,
                 live: true,
+                lastUpdate: new Date().toISOString()
             };
         } catch (err) {
             console.warn('[NasaService] ISS fetch failed:', err.message);
-            return { lat: 28.5, lng: -80.6, live: false };
+            return { lat: 28.5, lng: -80.6, altitude: 408, velocity: 7.66, live: false };
         }
     }
 

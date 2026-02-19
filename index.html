@@ -208,6 +208,9 @@
         </div>
     </div>
 
+    <!-- LIVE STATUS INDICATOR -->
+    <div id="live-status" style="display:none;"></div>
+
     <!-- CHIPS (Earth mode) -->
     <div id="chips">
         <div class="chip"><span class="cdot cdot-live"></span><span id="chip-iss">ISS — loading…</span></div>
@@ -292,6 +295,12 @@
     <script src="services/neoVisualization.js"></script>
     <script src="services/firmsService.js"></script>
     <script src="services/chatService.js"></script>
+    
+    <!-- Enhanced Real-time Services -->
+    <script src="services/realtimeService.js"></script>
+    <script src="services/enhancedWeatherService.js"></script>
+    <script src="services/enhancedSatelliteService.js"></script>
+    <script src="services/liveDataManager.js"></script>
 
     
     <script src="hooks/useISSPosition.js"></script>
@@ -302,6 +311,8 @@
     <!-- Earth Impact Components -->
     <script src="components/EarthImpact.js"></script>
     <script src="components/EarthImpactUI.js"></script>
+    <script src="components/DynamicEarthImpact.js"></script>
+    <script src="components/DynamicEarthImpactUI.js"></script>
     
     <!-- Main App -->
     <script src="app.js"></script>
