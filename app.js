@@ -2183,6 +2183,21 @@ chatBox.innerHTML += `
 
         chatBox.scrollTop = chatBox.scrollHeight;
     });
+
+    const toggleBtn = document.getElementById("chatToggle");
+const chatbot   = document.getElementById("chatbot");
+const closeBtn  = document.getElementById("chatClose");
+
+toggleBtn.addEventListener("click", () => {
+    chatbot.classList.remove("chat-hidden");
+    toggleBtn.style.display = "none";
+});
+
+closeBtn.addEventListener("click", () => {
+    chatbot.classList.add("chat-hidden");
+    toggleBtn.style.display = "flex";
+});
+
 }
 
 // Initialize after page load

@@ -319,16 +319,24 @@
         });
     </script>
 
-    <!-- CHATBOT -->
-<div id="chatbot">
-    <div id="chatHeader">🤖 Astro Assistant</div>
+    <!-- CHAT TOGGLE BUTTON -->
+<div id="chatToggle">🤖</div>
+
+<!-- CHATBOT WINDOW -->
+<div id="chatbot" class="chat-hidden">
+    <div id="chatHeader">
+        🤖 Astro Assistant
+        <span id="chatClose">✕</span>
+    </div>
+
     <div id="chatMessages"></div>
 
     <div id="chatInputWrap">
-        <input id="chatInput" placeholder="Ask about space, NEOs, ISS..." />
+        <input id="chatInput" placeholder="Ask about space..." />
         <button id="chatSend">Send</button>
     </div>
 </div>
+
 
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 

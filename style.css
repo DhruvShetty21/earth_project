@@ -976,6 +976,7 @@ body.impact-mode #hint {
     flex-direction: column;
     overflow: hidden;
     z-index: 9999;
+    transition: all 0.25s ease;
 }
 
 #chatHeader {
@@ -1051,3 +1052,48 @@ body.impact-mode #hint {
     border: 1px solid rgba(255,255,255,0.1);
     padding: 4px;
 }
+
+/* Floating toggle button */
+#chatToggle {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 55px;
+    height: 55px;
+    background: linear-gradient(135deg, var(--cyan), var(--blue));
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    cursor: pointer;
+    box-shadow: 0 0 20px rgba(0,212,255,0.4);
+    z-index: 10000;
+    transition: transform 0.2s ease;
+}
+
+#chatToggle:hover {
+    transform: scale(1.1);
+}
+
+/* Chat window hidden state */
+.chat-hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(20px);
+}
+
+/* Chat window animation *
+
+/* Close button */
+#chatClose {
+    float: right;
+    cursor: pointer;
+    font-size: 14px;
+    opacity: 0.7;
+}
+
+#chatClose:hover {
+    opacity: 1;
+}
+
