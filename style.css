@@ -161,6 +161,20 @@ nav {
 .cdot-warn { background: var(--red); }
 .cdot-blue { background: var(--blue); }
 
+/* ── LIVE STATUS INDICATOR ── */
+#live-status {
+    position: fixed; top: 68px; right: 20px; z-index: 200;
+    background: rgba(5,5,18,.95); border: 1px solid rgba(0,255,136,.3);
+    border-radius: 8px; padding: 7px 13px; font-size: .7rem;
+    color: var(--green); backdrop-filter: blur(12px);
+    display: flex; align-items: center; gap: 8px;
+    box-shadow: 0 0 12px rgba(0,255,136,.15);
+}
+#live-status::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--green); animation: blink 1.4s infinite;
+}
+
 /* ── HINT ── */
 #hint {
     position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);

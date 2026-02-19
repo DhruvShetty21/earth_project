@@ -49,7 +49,34 @@ function _finishLoad() {
 
     _loadAllData();
 
-    // ISS polling
+    // Initialize live data manager
+    if (window.LiveDataManager) {
+        LiveDataManager.init();
+        
+        // Add listeners for live updates
+        LiveDataManager.addListener('iss', (data) => {
+            if (STATE.mode === 'earth' && GlobeView.isReady()) {
+                GlobeView.updateISS(data, _currentGlobeData());
+            }
+        });
+        
+        LiveDataManager.addListener('disasters', (data) => {
+            if (STATE.mode === 'earth') {
+                _updateEarthSidebarData();
+                if (GlobeView.isReady()) {
+                    GlobeView.refresh(_currentGlobeData(), STATE.layers);
+                }
+            }
+        });
+        
+        LiveDataManager.addListener('neo', (data) => {
+            if (STATE.mode === 'earth') {
+                _updateEarthSidebarData();
+            }
+        });
+    }
+
+    // ISS polling (enhanced with live data)
     useISSPosition.start(pos => {
         useNASAData.updateISS(pos);
         document.getElementById('chip-iss').textContent =
