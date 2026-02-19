@@ -2,11 +2,16 @@
 // Node.js proxy server with SpaceDevs event visibility calculations
 // Run with: node server/proxyServer.js
 
+require('dotenv').config();
+
+
 const express = require('express');
 const axios = require('axios');
 const path = require('path');
 const app = express();
-const port = 5000;
+
+const port = 3000;
+
 
 // Serve static files
 app.use(express.static(path.join(__dirname, '..')));
@@ -275,6 +280,30 @@ async function fetchSpaceDevsEvents(limit = 50, daysAhead = 90) {
 // ============= EXPRESS ENDPOINTS =============
 
 // 1. Get events with visibility for a location
+
+
+app.get('/api/n2yo/above', async (req, res) => {
+    try {
+        const { lat, lon, radius = 70, category = 0 } = req.query;
+        const apiKey = process.env.N2YO_API_KEY;
+
+        if (!apiKey) {
+            return res.status(400).json({ error: 'N2YO API key not configured' });
+        }
+
+        const altitude = 0;
+
+        const url = `https://api.n2yo.com/rest/v1/satellite/above/${lat}/${lon}/${altitude}/${radius}/${category}?apiKey=${apiKey}`;
+
+        const response = await axios.get(url);
+        res.json(response.data);
+    } catch (error) {
+        console.error("N2YO ABOVE ERROR:", error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
 app.get('/api/events/location', async (req, res) => {
     try {
         const { lat, lon, days = 90 } = req.query;
@@ -410,7 +439,9 @@ app.get('/api/events/types', async (req, res) => {
 app.get('/api/nasa/*', async (req, res) => {
     try {
         const apiPath = req.params[0];
-        const apiKey = process.env.NASA_API_KEY || 'DEMO_KEY';
+
+        const apiKey = process.env.NASA_API_KEY;
+
         
         let url = `https://api.nasa.gov/${apiPath}`;
         const separator = url.includes('?') ? '&' : '?';
@@ -460,24 +491,41 @@ app.get('/api/iss', async (req, res) => {
 app.get('/api/iss-pass', async (req, res) => {
     try {
         const { lat, lon } = req.query;
+
+        const apiKey = process.env.N2YO_API_KEY;
+
         if (!lat || !lon) {
             return res.status(400).json({ error: 'Latitude and longitude required' });
         }
-        
-        const response = await axios.get(
-            `http://api.open-notify.org/iss-pass.json?lat=${lat}&lon=${lon}&n=5`
-        );
+
+        if (!apiKey) {
+            return res.status(400).json({ error: 'N2YO API key not configured' });
+        }
+
+        const altitude = 0;     // meters
+        const days = 3;         // next 3 days
+        const minElevation = 10;
+
+        const url = `https://api.n2yo.com/rest/v1/satellite/visualpasses/25544/${lat}/${lon}/${altitude}/${days}/${minElevation}?apiKey=${apiKey}`;
+
+        const response = await axios.get(url);
         res.json(response.data);
+
     } catch (error) {
+        console.error("ISS PASS ERROR:", error.message);
+
         res.status(500).json({ error: error.message });
     }
 });
+
 
 // ============= NASA FIRMS — ACTIVE FIRE DATA =============
 // Proxied server-side to avoid CORS. Cached for 1 hour (fires update every 12h).
 
 app.get('/api/firms', async (req, res) => {
-    const NASA_KEY = process.env.NASA_FIRMS_KEY || process.env.NASA_API_KEY || '55826db0684ca327b51401414c32b5f6';
+
+    const NASA_KEY = process.env.NASA_FIRMS_KEY || process.env.NASA_API_KEY;
+
     const { source = 'VIIRS_SNPP_NRT', days = 1 } = req.query;
 
     // Only allow known safe sources
@@ -592,6 +640,7 @@ app.get('/api/eonet', async (req, res) => {
     }
 });
 
+
 // Chatbot
 // ================== AI CHATBOT ENDPOINT ==================
 app.use(express.json());
@@ -630,8 +679,26 @@ const reply = response.data.choices[0].message.content;
     }
 });
 
+app.get('/api/n2yo/visual-passes', async (req, res) => {
+    try {
+        const { id, lat, lon, days = 7, min_elevation = 10 } = req.query;
+        const apiKey = process.env.N2YO_API_KEY;
 
+        if (!apiKey) {
+            return res.status(400).json({ error: 'N2YO API key not configured' });
+        }
 
+        const altitude = 0;
+
+        const url = `https://api.n2yo.com/rest/v1/satellite/visualpasses/${id}/${lat}/${lon}/${altitude}/${days}/${min_elevation}?apiKey=${apiKey}`;
+
+        const response = await axios.get(url);
+        res.json(response.data);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+
+    }
+});
 
 // ============= NASA EONET — SINGLE CATEGORY =============
 // Convenience route: /api/eonet/wildfires  /api/eonet/severeStorms  etc.

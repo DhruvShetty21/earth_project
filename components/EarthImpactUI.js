@@ -570,7 +570,7 @@ const EarthImpactUI = (() => {
             <div>
                 <div class="ei-card" style="--accent:${C.climate};--accentRgb:56,189,248">
                     <div class="ei-card-head">
-                        <div class="ei-card-title"> Global Temperature Anomaly
+                        <div class="ei-card-title">🌡️ Global Temperature Anomaly
                             <span class="ei-card-badge">NASA GISTEMP</span>
                         </div>
                     </div>
