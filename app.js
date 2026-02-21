@@ -741,18 +741,26 @@ async function _onGlobeLocationClick(lat, lng) {
     );
 
     // ── Append Share button to the panel HTML ─────────────────────────────
-    // ── Store share data globally (never pass strings inline in onclick) ──
-    window._lastSharePayload  = _sharePaylod;
-    window._lastShareLocation = displayName;
-
-    // ── Append Share button to the panel HTML ─────────────────────────────
     html += `
-        <div class="div"></div>
-        <button class="share-intel-btn" onclick="window._openShareModal(window._lastShareLocation, window._lastSharePayload)">
-            📡 Share This Report via Email / SMS
-        </button>`;
+    <div class="div"></div>
+    <button class="share-intel-btn" id="share-trigger-btn">
+        📡 Share This Report via Email
+    </button>`;
+
+    // Store payload globally so the modal can grab it
+    window._lastSharePayload = _sharePaylod;
 
     showPanel(html);
+
+    // Attach share button after panel is in DOM — avoids inline onclick escaping issues
+setTimeout(() => {
+    const shareBtn = document.getElementById('share-trigger-btn');
+    if (shareBtn) {
+        shareBtn.addEventListener('click', () => {
+            window._openShareModal(displayName, window._lastSharePayload);
+        });
+    }
+}, 50);
 }
 // ═══════════════════════════════════════════
 //  HELPER FUNCTIONS

@@ -1,6 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// SHARE FEATURE — paste this entire block into app.js
-// (place it just above the "// ── BOOT ──" comment at the bottom)
+// SHARE FEATURE — ui/shareFeature.js
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ─── Share Modal Styles ───────────────────────────────────────────────────
@@ -9,7 +8,6 @@
     const s = document.createElement('style');
     s.id = 'share-modal-styles';
     s.textContent = `
-        /* ── Share button inside the location panel ── */
         .share-intel-btn {
             display: flex;
             align-items: center;
@@ -39,7 +37,6 @@
         }
         .share-intel-btn:active { transform: translateY(0); }
 
-        /* ── Share modal overlay ── */
         #share-modal-overlay {
             display: none;
             position: fixed;
@@ -50,11 +47,8 @@
             align-items: center;
             justify-content: center;
         }
-        #share-modal-overlay.open {
-            display: flex;
-        }
+        #share-modal-overlay.open { display: flex; }
 
-        /* ── Share modal card ── */
         #share-modal {
             width: min(480px, calc(100vw - 32px));
             background: linear-gradient(160deg, #080f22 0%, #04080f 100%);
@@ -102,7 +96,6 @@
         }
         .share-modal-close:hover { color: #c0c8d8; background: rgba(255,255,255,0.07); }
 
-        /* Location being shared */
         .share-location-badge {
             display: flex;
             align-items: center;
@@ -117,7 +110,6 @@
         }
         .share-location-badge strong { color: #a8d0ff; }
 
-        /* Tabs */
         .share-tabs {
             display: flex;
             gap: 6px;
@@ -146,7 +138,6 @@
             box-shadow: 0 1px 4px rgba(0,0,0,0.4);
         }
 
-        /* Input field */
         .share-field {
             position: relative;
             margin-bottom: 14px;
@@ -187,10 +178,7 @@
             opacity: 0.5;
         }
 
-        /* Content checkboxes */
-        .share-content-wrap {
-            margin-bottom: 16px;
-        }
+        .share-content-wrap { margin-bottom: 16px; }
         .share-content-label {
             font-size: 0.7rem;
             font-weight: 700;
@@ -236,7 +224,6 @@
             color: #8ab8e0;
         }
 
-        /* Send button */
         .share-send-btn {
             width: 100%;
             padding: 13px;
@@ -264,19 +251,18 @@
         }
         .share-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-        /* Status */
         .share-status {
             margin-top: 10px;
             font-size: 0.78rem;
             text-align: center;
             min-height: 20px;
             transition: all 0.2s;
+            word-break: break-word;
         }
         .share-status.success { color: #34d399; }
         .share-status.error   { color: #f87171; }
         .share-status.loading { color: #60a5fa; }
 
-        /* Spinner */
         .share-spinner {
             width: 15px; height: 15px;
             border: 2px solid rgba(122,184,255,0.2);
@@ -286,6 +272,21 @@
             display: inline-block;
         }
         @keyframes share-spin { to { transform: rotate(360deg); } }
+
+        /* Debug info box */
+        .share-debug {
+            margin-top: 8px;
+            padding: 8px 10px;
+            background: rgba(248,113,113,0.08);
+            border: 1px solid rgba(248,113,113,0.2);
+            border-radius: 8px;
+            font-size: 0.7rem;
+            color: #f87171;
+            font-family: monospace;
+            display: none;
+            word-break: break-all;
+        }
+        .share-debug.show { display: block; }
     `;
     document.head.appendChild(s);
 })();
@@ -304,23 +305,19 @@
                         <span>📡</span>
                         <span>Share Location Intel</span>
                     </div>
-                    <div class="share-modal-subtitle">Send this space report via Email or SMS</div>
+                    <div class="share-modal-subtitle">Send this space report via Email</div>
                 </div>
                 <button class="share-modal-close" id="share-modal-close" aria-label="Close">✕</button>
             </div>
 
-            <!-- Location being shared -->
             <div class="share-location-badge">
                 📍 <strong id="share-location-name">—</strong>
             </div>
 
-            <!-- Email / SMS tabs -->
             <div class="share-tabs">
                 <button class="share-tab active" data-tab="email">📧 Email</button>
-                <button class="share-tab" data-tab="sms">💬 SMS</button>
             </div>
 
-            <!-- Email section -->
             <div id="share-email-section">
                 <div class="share-field">
                     <label>Email address</label>
@@ -330,17 +327,6 @@
                 </div>
             </div>
 
-            <!-- SMS section -->
-            <div id="share-sms-section" style="display:none">
-                <div class="share-field">
-                    <label>Phone number (international format)</label>
-                    <span class="share-field-icon">📱</span>
-                    <input type="tel" id="share-phone-input"
-                           placeholder="+1 415 555 2671" autocomplete="tel"/>
-                </div>
-            </div>
-
-            <!-- Content selection -->
             <div class="share-content-wrap">
                 <div class="share-content-label">Include in report</div>
                 <div class="share-content-grid">
@@ -370,58 +356,49 @@
                 <span id="share-send-text">SEND REPORT</span>
             </button>
             <div class="share-status" id="share-status"></div>
+            <div class="share-debug" id="share-debug"></div>
         </div>
     `;
     document.body.appendChild(overlay);
 
-    // Close on overlay click
     overlay.addEventListener('click', e => {
         if (e.target === overlay) _closeShareModal();
     });
 
-    // Close button
     document.getElementById('share-modal-close').addEventListener('click', _closeShareModal);
 
-    // Tab switching
     overlay.querySelectorAll('.share-tab').forEach(tab => {
         tab.addEventListener('click', () => {
             overlay.querySelectorAll('.share-tab').forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
-            const m = tab.dataset.tab;
-            document.getElementById('share-email-section').style.display = m === 'email' ? '' : 'none';
-            document.getElementById('share-sms-section').style.display   = m === 'sms'   ? '' : 'none';
             document.getElementById('share-status').textContent = '';
+            document.getElementById('share-debug').classList.remove('show');
         });
     });
 
-    // Checkbox styling
     overlay.querySelectorAll('.share-check-item input').forEach(cb => {
         cb.addEventListener('change', () => {
             cb.closest('.share-check-item').classList.toggle('checked', cb.checked);
         });
     });
 
-    // Send button
     document.getElementById('share-send-btn').addEventListener('click', _handleShareSend);
 
-    // Enter key
-    ['share-email-input','share-phone-input'].forEach(id => {
-        document.getElementById(id)?.addEventListener('keydown', e => {
-            if (e.key === 'Enter') _handleShareSend();
-        });
+    document.getElementById('share-email-input').addEventListener('keydown', e => {
+        if (e.key === 'Enter') _handleShareSend();
     });
 })();
 
 // ─── Share Modal State ────────────────────────────────────────────────────
-let _sharePayload = null; // the structured data object from the panel
+let _sharePayload = null;
 
-// ─── Open / Close ─────────────────────────────────────────────────────────
 function _openShareModal(locationName, payload) {
     _sharePayload = payload;
     document.getElementById('share-location-name').textContent = locationName;
     document.getElementById('share-status').textContent = '';
+    document.getElementById('share-status').className = 'share-status';
+    document.getElementById('share-debug').classList.remove('show');
     document.getElementById('share-email-input').value = '';
-    document.getElementById('share-phone-input').value = '';
     document.getElementById('share-modal-overlay').classList.add('open');
     setTimeout(() => document.getElementById('share-email-input').focus(), 200);
 }
@@ -432,34 +409,48 @@ function _closeShareModal() {
 
 // ─── Send Handler ─────────────────────────────────────────────────────────
 async function _handleShareSend() {
-    const activeTab = document.querySelector('.share-tab.active')?.dataset.tab;
     const statusEl  = document.getElementById('share-status');
+    const debugEl   = document.getElementById('share-debug');
     const sendBtn   = document.getElementById('share-send-btn');
     const sendIcon  = document.getElementById('share-send-icon');
     const sendText  = document.getElementById('share-send-text');
 
+    debugEl.classList.remove('show');
+
     if (!_sharePayload) {
-        statusEl.textContent = 'No data to send. Please re-open a location.';
+        statusEl.textContent = '❌ No data to send. Please re-open a location first.';
         statusEl.className = 'share-status error';
         return;
     }
 
-    // Collect selected sections
     const selectedSections = Array.from(
         document.querySelectorAll('input[name="share-section"]:checked')
     ).map(cb => cb.value);
 
     if (selectedSections.length === 0) {
-        statusEl.textContent = 'Select at least one section to include.';
+        statusEl.textContent = '❌ Select at least one section to include.';
         statusEl.className = 'share-status error';
         return;
     }
 
-    // Filter payload to only selected sections
-    const filteredPayload = { ..._sharePayload };
-    filteredPayload.sections = {};
+    const recipient = document.getElementById('share-email-input').value.trim();
+    if (!recipient) {
+        statusEl.textContent = '❌ Please enter an email address.';
+        statusEl.className = 'share-status error';
+        return;
+    }
+
+    // Basic email validation
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+        statusEl.textContent = '❌ Please enter a valid email address.';
+        statusEl.className = 'share-status error';
+        return;
+    }
+
+    // Filter payload
+    const filteredPayload = { ..._sharePayload, sections: {} };
     selectedSections.forEach(key => {
-        if (_sharePayload.sections[key] !== undefined) {
+        if (_sharePayload.sections && _sharePayload.sections[key] !== undefined) {
             filteredPayload.sections[key] = _sharePayload.sections[key];
         }
     });
@@ -468,42 +459,46 @@ async function _handleShareSend() {
     sendBtn.disabled = true;
     sendIcon.outerHTML = '<span id="share-send-icon" class="share-spinner"></span>';
     sendText.textContent = 'SENDING…';
-    statusEl.textContent = '';
+    statusEl.textContent = 'Contacting server…';
     statusEl.className = 'share-status loading';
 
     try {
-        let endpoint, body, recipient;
+        const body = { to: recipient, payload: filteredPayload };
 
-        if (activeTab === 'email') {
-            recipient = document.getElementById('share-email-input').value.trim();
-            if (!recipient) {
-                _resetShareBtn(); statusEl.textContent = 'Enter an email address.'; statusEl.className = 'share-status error'; return;
-            }
-            endpoint = '/api/share/email';
-            body = { to: recipient, payload: filteredPayload };
+        console.log('[Share] Sending to:', recipient);
+        console.log('[Share] Payload keys:', Object.keys(filteredPayload.sections));
 
-        } else {
-            recipient = document.getElementById('share-phone-input').value.trim();
-            if (!recipient) {
-                _resetShareBtn(); statusEl.textContent = 'Enter a phone number.'; statusEl.className = 'share-status error'; return;
-            }
-            endpoint = '/api/share/sms';
-            body = { to: recipient, payload: filteredPayload };
+        let res;
+        try {
+            res = await fetch('/api/share/email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+        } catch (networkErr) {
+            throw new Error(`Network error — is the proxy server running on port 3000? (${networkErr.message})`);
         }
 
-        const res  = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
-        const json = await res.json();
+        // Safely parse JSON — don't assume res.json() will work
+        const rawText = await res.text();
+        console.log('[Share] Raw response:', rawText);
 
-        if (!res.ok) throw new Error(json.error || json.detail || 'Send failed');
+        let json;
+        try {
+            json = JSON.parse(rawText);
+        } catch (parseErr) {
+            // Show the raw response in debug
+            debugEl.textContent = `Server response (not JSON): ${rawText || '(empty)'}`;
+            debugEl.classList.add('show');
+            throw new Error(`Server returned invalid response (status ${res.status}). Check server logs.`);
+        }
+
+        if (!res.ok) {
+            throw new Error(json.error || json.detail || json.message || `Server error ${res.status}`);
+        }
 
         statusEl.textContent = `✅ ${json.message || 'Report sent successfully!'}`;
         statusEl.className = 'share-status success';
-
-        // Auto-close after success
         setTimeout(_closeShareModal, 2800);
 
     } catch (err) {
@@ -524,47 +519,35 @@ function _resetShareBtn() {
     if (text) text.textContent = 'SEND REPORT';
 }
 
-// ─── Build Share Payload from live panel data ─────────────────────────────
-// Call this right after _onGlobeLocationClick finishes building the panel HTML.
-// It extracts data already fetched by the location click handler.
+// ─── Build Share Payload ──────────────────────────────────────────────────
 function _buildSharePayload(locationName, coords, fetchedData) {
     const {
-        weatherData,
-        vis,
-        issPass,
-        spaceDevsEvents,
-        spaceWeather,
-        locationVisibility,
-        impactRisk,
-        satellitePasses,
-        nearbyLaunches,
-        nearDisaster,
+        weatherData, vis, issPass, spaceDevsEvents,
+        spaceWeather, locationVisibility, impactRisk,
+        satellitePasses, nearbyLaunches, nearDisaster,
     } = fetchedData || {};
 
     const sections = {};
 
-    // Sky Tonight
     if (vis) {
         sections.sky = {
-            score: vis.score,
-            label: vis.label,
-            message: vis.message,
-            moon: VisibilityScore.moonDescription(vis.moonPct / 100),
-            weather: weatherData
-                ? `${_cap(weatherData.weather?.[0]?.description || '')} · ${Math.round(weatherData.main?.temp || 0)}°C · ${weatherData.clouds?.all ?? 0}% cloud`
+            score:     vis.score,
+            label:     vis.label,
+            message:   vis.message,
+            moon:      (typeof VisibilityScore !== 'undefined') ? VisibilityScore.moonDescription(vis.moonPct / 100) : '',
+            weather:   weatherData
+                ? `${(weatherData.weather?.[0]?.description || '')} · ${Math.round(weatherData.main?.temp || 0)}°C · ${weatherData.clouds?.all ?? 0}% cloud`
                 : null,
             nightHours: locationVisibility?.analysis?.night_hours ?? null,
         };
     }
 
-    // ISS Pass
     if (issPass?.response?.[0]) {
         const pass = issPass.response[0];
         const pd   = new Date(pass.risetime * 1000);
-        sections.iss = `Next pass: ${pd.toLocaleDateString([], { weekday:'short', month:'short', day:'numeric' })} at ${pd.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })} · Visible ~${formatDuration(pass.duration)}`;
+        sections.iss = `Next pass: ${pd.toLocaleDateString([], { weekday:'short', month:'short', day:'numeric' })} at ${pd.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' })} · Visible ~${typeof formatDuration === 'function' ? formatDuration(pass.duration) : pass.duration + 's'}`;
     }
 
-    // Space Events (SpaceDevs)
     if (spaceDevsEvents?.events?.length > 0) {
         sections.events = spaceDevsEvents.events
             .filter(e => new Date(e.date) > new Date())
@@ -575,7 +558,6 @@ function _buildSharePayload(locationName, coords, fetchedData) {
             });
     }
 
-    // Satellite Passes
     if (satellitePasses?.length > 0) {
         sections.satellites = satellitePasses.slice(0, 4).map(({ satellite, passes }) => {
             if (!passes?.length) return null;
@@ -585,7 +567,6 @@ function _buildSharePayload(locationName, coords, fetchedData) {
         }).filter(Boolean);
     }
 
-    // Nearby Launches
     if (nearbyLaunches?.length > 0) {
         sections.launches = nearbyLaunches.slice(0, 3).map(l => {
             const d = new Date(l.net);
@@ -593,31 +574,28 @@ function _buildSharePayload(locationName, coords, fetchedData) {
         });
     }
 
-    // Space Weather
     if (spaceWeather?.summary) {
         sections.spaceWeather = spaceWeather.summary;
     }
 
-    // NEO
     if (impactRisk?.hazardous_count > 0) {
         sections.neo = `${impactRisk.hazardous_count} potentially hazardous asteroid(s) tracked this week.`;
     }
 
-    // Disaster
     if (nearDisaster) {
         const { event, distKm, cat } = nearDisaster;
         sections.disaster = `${event.title} — ${cat} · ${distKm.toLocaleString()} km away`;
     }
 
     return {
-        location: locationName,
+        location:    locationName,
         coords,
         sections,
-        generatedAt: new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }),
+        generatedAt: new Date().toLocaleString('en-US', { dateStyle:'medium', timeStyle:'short' }),
     };
 }
 
-// Make share functions available globally
-window._openShareModal  = _openShareModal;
+// ─── Global exports ───────────────────────────────────────────────────────
+window._openShareModal    = _openShareModal;
 window._buildSharePayload = _buildSharePayload;
-window._closeShareModal = _closeShareModal;
+window._closeShareModal   = _closeShareModal;

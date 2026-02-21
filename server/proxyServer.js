@@ -750,57 +750,7 @@ app.post('/api/share/email', async (req, res) => {
 });
 
 // ── POST /api/share/sms ───────────────────────────────────────────────────
-app.post('/api/share/sms', async (req, res) => {
-    const { to, payload } = req.body;
 
-    if (!to || !payload) {
-        return res.status(400).json({ error: 'Missing required fields: to, payload' });
-    }
-
-    const accountSid = process.env.TWILIO_ACCOUNT_SID;
-    const authToken  = process.env.TWILIO_AUTH_TOKEN;
-    const fromNumber = process.env.TWILIO_FROM_NUMBER;
-
-    // ← ADD THIS BLOCK
-    console.log('[SMS Debug]', {
-        hasSid:    !!accountSid,
-        hasToken:  !!authToken,
-        hasFrom:   !!fromNumber,
-        sidPrefix: accountSid?.slice(0, 4),
-        to,
-    });
-
-    if (!accountSid || !authToken || !fromNumber) {
-        return res.status(500).json({ error: 'SMS not configured. Add TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER to .env' });
-    }
-
-    let twilio;
-    try {
-        twilio = require('twilio');
-    } catch {
-        return res.status(500).json({ error: 'twilio not installed. Run: npm install twilio' });
-    }
-
-    try {
-        const client  = twilio(accountSid, authToken);
-        const body    = buildSMSMessage(payload);
-        const smsBody = body.length > 1550 ? body.slice(0, 1547) + '…' : body;
-        const normalizedTo = to.startsWith('+') ? to : `+91${to}`;
-
-        const message = await client.messages.create({
-            body: smsBody,
-            from: fromNumber,
-            to:   normalizedTo,
-        });
-
-        res.json({ success: true, message: `Intel report sent to ${normalizedTo}`, sid: message.sid });
-
-    } catch (err) {
-        // ← DETAILED ERROR
-        console.error('[SMS Full Error]', err);
-        res.status(500).json({ error: 'Failed to send SMS', detail: err.message, code: err.code });
-    }
-});
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Start server
