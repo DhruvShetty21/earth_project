@@ -1,3 +1,4 @@
+
 // app.js — AstroView (fully updated with SpaceDevs event visibility)
 
 // ═══════════════════════════════════════════
@@ -134,6 +135,8 @@ async function _loadAllData() {
 
     if (STATE.mode === 'earth') {
         _ensureGlobeAndRefresh();
+        // Show location search
+        if (window.LocationSearch) LocationSearch.showForEarth();
     }
 }
 
@@ -190,66 +193,41 @@ function _showAlert(msg, type = 'warn') {
 //  MODE SWITCHING
 // ═══════════════════════════════════════════
 function goSolar() {
-    console.log('Switching to Solar System mode...');
-    
     STATE.mode = 'solar';
     document.getElementById('btn-solar').classList.add('active');
     document.getElementById('btn-earth').classList.remove('active');
     document.getElementById('btn-impact').classList.remove('active');
-    
-    // Hide other modes
     document.getElementById('earth-wrap').classList.add('hidden');
     document.getElementById('impact-wrap').classList.add('hidden');
-    
-    // Show solar mode
     document.getElementById('solar-wrap').classList.remove('hidden');
-    
-    // Hide Earth-specific UI elements
     document.getElementById('layers').classList.remove('show');
     document.getElementById('chips').classList.remove('show');
     document.getElementById('hint').textContent = 'Click any planet to explore · Earth opens Intel Mode';
-    
     closePanel();
+    if (window.LocationSearch) LocationSearch.hideForEarth();
     closeEarthSidebar();
-    
-    // Ensure solar animation is running
-    if (!_solarRaf) {
-        _solarLoop();
-    }
+    if (!_solarRaf) _solarLoop();
 }
 
 function goEarth() {
-    console.log('Switching to Earth Intel mode...');
-    
     STATE.mode = 'earth';
     document.getElementById('btn-earth').classList.add('active');
     document.getElementById('btn-solar').classList.remove('active');
     document.getElementById('btn-impact').classList.remove('active');
-    
-    // Hide other modes
     document.getElementById('solar-wrap').classList.add('hidden');
     document.getElementById('impact-wrap').classList.add('hidden');
-    
-    // Show Earth mode
     document.getElementById('earth-wrap').classList.remove('hidden');
-    
-    // Show Earth-specific UI elements
     document.getElementById('layers').classList.add('show');
     document.getElementById('chips').classList.add('show');
     document.getElementById('hint').textContent = 'Click anywhere on Earth for local space intel · Click markers for live events';
-    
     closePanel();
-    
-    // Show Earth info sidebar
     setTimeout(() => {
         document.getElementById('earth-info-sidebar').classList.add('show');
         _updateEarthSidebarData();
     }, 300);
-    
-    // Initialize or refresh globe
+    if (window.LocationSearch) LocationSearch.showForEarth();
     _ensureGlobeAndRefresh();
 }
-
 
 function closeEarthSidebar() {
     document.getElementById('earth-info-sidebar').classList.remove('show');
@@ -258,7 +236,6 @@ function closeEarthSidebar() {
 function _updateEarthSidebarData() {
     const disasters = useNASAData.get('disasters') || [];
     const neo = useNASAData.get('neo') || [];
-    
     document.getElementById('earth-disasters').textContent = disasters.length || '0';
     document.getElementById('earth-neos').textContent = neo.length || '0';
 }
@@ -310,14 +287,12 @@ function toggleLayer(name, btn) {
 //  MARKER CLICK → PANEL
 // ═══════════════════════════════════════════
 // Update the _onMarkerClick function in app.js
-
 function _onMarkerClick(d) {
     if (d.type === 'iss') {
         _panelISS(d.raw);
     } else if (d.type === 'disaster') {
         _panelDisaster(d.raw, d.style, d.cat);
     } else if (d.type === 'neo') {
-        // Use NEOVisualization for detailed panel
         if (window.NEOVisualization) {
             const html = NEOVisualization.generateNEOInfoPanel(d.raw);
             showPanel(html);
@@ -332,16 +307,12 @@ function _onMarkerClick(d) {
 // ═══════════════════════════════════════════
 //  API FETCH FUNCTIONS FOR LOCATION
 // ═══════════════════════════════════════════
-
 async function _fetchSkyEvents(lat, lng) {
     try {
         const response = await fetch(`/api/sky-tonight/events?lat=${lat}&lon=${lng}`);
         if (!response.ok) throw new Error('Sky events fetch failed');
         return await response.json();
-    } catch (error) {
-        console.warn('Sky events error:', error);
-        return null;
-    }
+    } catch (error) { console.warn('Sky events error:', error); return null; }
 }
 
 async function _fetchSpaceWeather(lat, lng) {
@@ -349,10 +320,7 @@ async function _fetchSpaceWeather(lat, lng) {
         const response = await fetch(`/api/space-weather/location?lat=${lat}&lon=${lng}`);
         if (!response.ok) throw new Error('Space weather fetch failed');
         return await response.json();
-    } catch (error) {
-        console.warn('Space weather error:', error);
-        return null;
-    }
+    } catch (error) { console.warn('Space weather error:', error); return null; }
 }
 
 async function _fetchImpactRisk(lat, lng) {
@@ -360,30 +328,25 @@ async function _fetchImpactRisk(lat, lng) {
         const response = await fetch(`/api/impact/risk?lat=${lat}&lon=${lng}`);
         if (!response.ok) throw new Error('Impact risk fetch failed');
         return await response.json();
-    } catch (error) {
-        console.warn('Impact risk error:', error);
-        return null;
-    }
+    } catch (error) { console.warn('Impact risk error:', error); return null; }
 }
 
 async function _fetchLocationVisibility(lat, lng) {
-    // Computes approximate night hours + moon phase from lat/date alone.
-    // No API key needed — pure astronomy math.
     try {
-        const now        = new Date();
-        const moonPct    = (VisibilityScore.compute(null).moonPct || 0) / 100;
-        const dayOfYear  = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000);
-        const dec        = 23.45 * Math.sin(((dayOfYear - 81) * 360 / 365) * Math.PI / 180); // solar declination
-        const latRad     = lat * Math.PI / 180;
-        const decRad     = dec * Math.PI / 180;
+        const now       = new Date();
+        const moonPct   = (VisibilityScore.compute(null).moonPct || 0) / 100;
+        const dayOfYear = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000);
+        const dec       = 23.45 * Math.sin(((dayOfYear - 81) * 360 / 365) * Math.PI / 180);
+        const latRad    = lat * Math.PI / 180;
+        const decRad    = dec * Math.PI / 180;
 
         let nightHours = 12;
         try {
             const cosHA = -Math.tan(latRad) * Math.tan(decRad);
-            if      (cosHA < -1) nightHours = 0;   // polar day
-            else if (cosHA >  1) nightHours = 24;  // polar night
+            if      (cosHA < -1) nightHours = 0;
+            else if (cosHA >  1) nightHours = 24;
             else nightHours = Math.round(24 - (2 / 15) * (Math.acos(cosHA) * 180 / Math.PI));
-        } catch (_) { /* keep default 12 */ }
+        } catch (_) {}
 
         const PHASES = [
             { icon: '🌑', name: 'New Moon',        max: 0.06 },
@@ -413,17 +376,15 @@ async function _fetchSpaceDevsEvents(lat, lng, days = 90) {
         const response = await fetch(`/api/events/location?lat=${lat}&lon=${lng}&days=${days}`);
         if (!response.ok) throw new Error('SpaceDevs events fetch failed');
         return await response.json();
-    } catch (error) {
-        console.warn('SpaceDevs events error:', error);
-        return null;
-    }
+    } catch (error) { console.warn('SpaceDevs events error:', error); return null; }
 }
 
 // ═══════════════════════════════════════════
-//  EARTH LOCATION CLICK — WITH SPACEDEVS EVENTS
+//  EARTH LOCATION CLICK
 // ═══════════════════════════════════════════
 async function _onGlobeLocationClick(lat, lng) {
-    // Show skeleton immediately
+
+    // Show skeleton immediately — NO plantPin yet (wait for geocoding)
     showPanel(`
         <div class="ptag earth">📍 LOCATION INTEL</div>
         <div class="ptitle loc-title">Scanning location…</div>
@@ -439,34 +400,34 @@ async function _onGlobeLocationClick(lat, lng) {
         </div>
     `);
 
-    // ─────────────────────────────────────────────────────────────
-    //  FIX: Exact 9-variable ↔ 9-entry Promise.all mapping
-    //  Old code had 9 variables but only 6 Promise.all entries.
-    // ─────────────────────────────────────────────────────────────
     const [
-        geoName,             // [0]
-        weatherData,         // [1]
-        issPass,             // [2]
-        spaceDevsEvents,     // [3]
-        spaceWeather,        // [4]  ← was MISSING from old Promise.all
-        locationVisibility,  // [5]  ← was MISSING + _fetchLocationVisibility was undefined
-        impactRisk,          // [6]  ← was MISSING from old Promise.all
-        satellitePasses,     // [7]  ← was at wrong index in old code
-        nearbyLaunches       // [8]  ← was always undefined in old code
+        geoName,
+        weatherData,
+        issPass,
+        spaceDevsEvents,
+        spaceWeather,
+        locationVisibility,
+        impactRisk,
+        satellitePasses,
+        nearbyLaunches
     ] = await Promise.all([
-        _reverseGeocode(lat, lng),           // [0]
-        _fetchLocationWeather(lat, lng),     // [1]
-        _fetchISSPass(lat, lng),             // [2]
-        _fetchSpaceDevsEvents(lat, lng),     // [3]
-        _fetchSpaceWeather(lat, lng),        // [4]  ← ADDED
-        _fetchLocationVisibility(lat, lng),  // [5]  ← ADDED (new function above)
-        _fetchImpactRisk(lat, lng),          // [6]  ← ADDED
-        _fetchSatellitePasses(lat, lng),     // [7]
-        _fetchNearbyLaunches(lat, lng)       // [8]
+        _reverseGeocode(lat, lng),
+        _fetchLocationWeather(lat, lng),
+        _fetchISSPass(lat, lng),
+        _fetchSpaceDevsEvents(lat, lng),
+        _fetchSpaceWeather(lat, lng),
+        _fetchLocationVisibility(lat, lng),
+        _fetchImpactRisk(lat, lng),
+        _fetchSatellitePasses(lat, lng),
+        _fetchNearbyLaunches(lat, lng)
     ]);
 
+    // ── Single plantPin call — AFTER geocoding, with real name ────────────
+    // No emoji prefix — GlobeView's WebGL label renderer can't display 📍
+    const pinLabel = geoName || `${Math.abs(lat).toFixed(2)}° ${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lng).toFixed(2)}° ${lng >= 0 ? 'E' : 'W'}`;
+    if (window.LocationSearch) LocationSearch.plantPin(lat, lng, pinLabel);
+
     const vis          = VisibilityScore.compute(weatherData);
-    const neo          = useNASAData.get('neo') || [];
     const issNow       = useNASAData.get('iss') || useISSPosition.getLastPosition();
     const nearDisaster = _findNearestDisaster(lat, lng);
     const sc           = vis.score > 70 ? 'var(--green)' : vis.score > 45 ? 'var(--gold)' : 'var(--red)';
@@ -507,7 +468,7 @@ async function _onGlobeLocationClick(lat, lng) {
         <div class="loc-moon-row">🌙 ${VisibilityScore.moonDescription(vis.moonPct / 100)}</div>`;
     }
 
-    // ── 2. LOCATION VISIBILITY ANALYSIS (now populated) ──────────────────
+    // ── 2. LOCATION VISIBILITY ANALYSIS ──────────────────────────────────
     if (locationVisibility?.analysis) {
         const a = locationVisibility.analysis;
         html += `
@@ -522,7 +483,6 @@ async function _onGlobeLocationClick(lat, lng) {
     if (spaceDevsEvents?.events?.length > 0) {
         html += `<div class="div"></div><div class="loc-section-head">🚀 Events Visible From Here</div>`;
         const upcoming = spaceDevsEvents.events.filter(e => new Date(e.date) > new Date()).slice(0, 5);
-
         upcoming.forEach(event => {
             const ed          = new Date(event.date);
             const dateStr     = ed.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' });
@@ -530,13 +490,11 @@ async function _onGlobeLocationClick(lat, lng) {
             const evVis       = event.visibility || {};
             const isHighlight = event.type?.name === 'EVA' || event.type?.name === 'Docking' || event.name?.toLowerCase().includes('launch');
             let visText = 'Check local time';
-
             if (evVis.visibilityWindows?.[0]?.start) {
                 const s = new Date(evVis.visibilityWindows[0].start).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', timeZone:'UTC' });
                 const e = new Date(evVis.visibilityWindows[0].end).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', timeZone:'UTC' });
                 visText = `${s} – ${e} UTC`;
             }
-
             html += `
             <div class="loc-event-card" style="background:${isHighlight ? 'rgba(100,150,255,0.15)' : 'rgba(30,40,60,0.6)'};border-radius:12px;padding:12px;margin-bottom:10px;border-left:4px solid ${isHighlight ? 'var(--green)' : 'var(--gold)'};cursor:pointer;" onclick="window.open('${event.url || '#'}','_blank')">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
@@ -552,7 +510,6 @@ async function _onGlobeLocationClick(lat, lng) {
                 ${evVis.bestViewing ? `<div style="font-size:0.7rem;color:var(--muted);margin-top:6px;background:rgba(0,0,0,0.2);padding:6px;border-radius:6px;">🔭 ${evVis.bestViewing}</div>` : ''}
             </div>`;
         });
-
         if (spaceDevsEvents.events.length > 5) {
             html += `<div class="ibox blue" style="text-align:center;cursor:pointer;" onclick="window.open('https://ll.thespacedevs.com','_blank')">+ ${spaceDevsEvents.events.length - 5} more events — click to see all</div>`;
         }
@@ -560,11 +517,10 @@ async function _onGlobeLocationClick(lat, lng) {
 
     // ── 4. ISS PASS ──────────────────────────────────────────────────────
     html += `<div class="div"></div><div class="loc-section-head">🛸 ISS Pass</div>`;
-
     if (issPass?.response?.[0]) {
-        const pass    = issPass.response[0];
-        const pd      = new Date(pass.risetime * 1000);
-        const canSee  = vis.score > 35 && !!weatherData;
+        const pass   = issPass.response[0];
+        const pd     = new Date(pass.risetime * 1000);
+        const canSee = vis.score > 35 && !!weatherData;
         html += `
         <div class="loc-iss-pass">
             <div class="loc-iss-time">
@@ -589,101 +545,58 @@ async function _onGlobeLocationClick(lat, lng) {
         <div class="ibox blue">ISS is ~${distKm.toLocaleString()} km away. It completes a full orbit every 92 minutes.</div>`;
     }
 
-    // ── 5. SATELLITE PASSES (now actually populated) ──────────────────────
+    // ── 5. SATELLITE PASSES ───────────────────────────────────────────────
     html += `<div class="div"></div><div class="loc-section-head">🛰️ Upcoming Satellite Passes</div>`;
-
-    html += `<div class="div"></div><div class="loc-section-head">🛰️ Upcoming Satellite Passes</div>`;
-
     if (satellitePasses?.length > 0) {
         satellitePasses.forEach(({ satellite, passes }) => {
             if (!passes?.length) return;
-
-            const np       = passes[0];
-            const pd       = new Date(np.startUTC * 1000);
-            const score    = N2YOService.calculatePassScore(np);
-            const scoreCol = score > 70 ? 'var(--green)' : score > 40 ? 'var(--gold)' : 'var(--red)';
-
-            // Duration: endUTC - startUTC in seconds
-            const durationSec = (np.endUTC || 0) - (np.startUTC || 0);
-            const durationStr = formatDuration(durationSec);
-
-            // Magnitude: N2YO returns 100000 when unknown/not applicable
-            const rawMag  = np.mag;
-            const magStr  = (rawMag === undefined || rawMag === null || rawMag >= 9999)
-                            ? 'N/A'
-                            : (typeof rawMag === 'number' ? rawMag.toFixed(1) : rawMag);
-
-            // Flag very long durations — these are likely geostationary/high-orbit sats
-            // where "duration" means something different (continuously above horizon)
-            const isGEO        = durationSec > 3600 * 6; // > 6 hours = almost certainly GEO
-            const durationLabel = isGEO
-                ? `${durationStr} (high-orbit / always visible)`
-                : `${durationStr} above horizon`;
-
-            const dateStr = pd.toLocaleDateString([], { month: 'short', day: 'numeric' });
-            const timeStr = pd.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
+            const np           = passes[0];
+            const pd           = new Date(np.startUTC * 1000);
+            const score        = N2YOService.calculatePassScore(np);
+            const scoreCol     = score > 70 ? 'var(--green)' : score > 40 ? 'var(--gold)' : 'var(--red)';
+            const durationSec  = (np.endUTC || 0) - (np.startUTC || 0);
+            const durationStr  = formatDuration(durationSec);
+            const rawMag       = np.mag;
+            const magStr       = (rawMag === undefined || rawMag === null || rawMag >= 9999)
+                                 ? 'N/A' : (typeof rawMag === 'number' ? rawMag.toFixed(1) : rawMag);
+            const isGEO        = durationSec > 3600 * 6;
+            const durationLabel = isGEO ? `${durationStr} (high-orbit / always visible)` : `${durationStr} above horizon`;
+            const dateStr      = pd.toLocaleDateString([], { month: 'short', day: 'numeric' });
+            const timeStr      = pd.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             html += `
-            <div style="
-                background: rgba(30,40,60,0.6);
-                border-radius: 12px;
-                padding: 12px;
-                margin-bottom: 10px;
-                border-left: 4px solid ${satellite.color || '#94a3b8'};
-            ">
-                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+            <div style="background:rgba(30,40,60,0.6);border-radius:12px;padding:12px;margin-bottom:10px;border-left:4px solid ${satellite.color || '#94a3b8'};">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
                     <span style="font-size:1.2rem;">${satellite.icon || '🛰️'}</span>
                     <span style="font-weight:600;">${satellite.name}</span>
-                    <span style="font-size:0.7rem; background:rgba(255,255,255,0.1); padding:2px 8px; border-radius:12px;">
-                        ${satellite.category}
-                    </span>
+                    <span style="font-size:0.7rem;background:rgba(255,255,255,0.1);padding:2px 8px;border-radius:12px;">${satellite.category}</span>
                 </div>
-
-                <div style="display:flex; gap:14px; font-size:0.8rem; flex-wrap:wrap; margin-bottom:6px;">
+                <div style="display:flex;gap:14px;font-size:0.8rem;flex-wrap:wrap;margin-bottom:6px;">
                     <div>📅 ${dateStr} at ${timeStr}</div>
                     <div>📐 Max elevation: ${np.maxEl}°</div>
                     <div>✨ Brightness: ${magStr === 'N/A' ? '<span style="color:var(--muted)">N/A</span>' : `mag ${magStr}`}</div>
-                    <div>⭐ Score: <span style="color:${scoreCol}; font-weight:600;">${score}/100</span></div>
+                    <div>⭐ Score: <span style="color:${scoreCol};font-weight:600;">${score}/100</span></div>
                 </div>
-
-                <div style="
-                    background: rgba(0,0,0,0.25);
-                    border-radius: 8px;
-                    padding: 8px 10px;
-                    font-size: 0.78rem;
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    color: ${isGEO ? 'var(--muted)' : 'var(--text)'};
-                ">
-                    <span>⏱️</span>
-                    <span>Visible for <strong>${durationLabel}</strong></span>
+                <div style="background:rgba(0,0,0,0.25);border-radius:8px;padding:8px 10px;font-size:0.78rem;display:flex;align-items:center;gap:8px;color:${isGEO ? 'var(--muted)' : 'var(--text)'};">
+                    <span>⏱️</span><span>Visible for <strong>${durationLabel}</strong></span>
                 </div>
-
-                <div style="font-size:0.7rem; color:var(--muted); margin-top:8px;">
+                <div style="font-size:0.7rem;color:var(--muted);margin-top:8px;">
                     Direction: ${np.startAzCompass} → ${np.maxAzCompass} → ${np.endAzCompass}
                 </div>
             </div>`;
         });
     } else {
-        html += `
-        <div class="ibox blue">
-            No satellite pass data available. Ensure <code>N2YO_API_KEY</code> is set
-            in your <code>.env</code> file and the proxy server is running.
-        </div>`;
+        html += `<div class="ibox blue">No satellite pass data available. Ensure <code>N2YO_API_KEY</code> is set in your <code>.env</code> file and the proxy server is running.</div>`;
     }
 
-    // ── 6. NEARBY LAUNCHES (now actually populated) ───────────────────────
+    // ── 6. NEARBY LAUNCHES ────────────────────────────────────────────────
     if (nearbyLaunches?.length > 0) {
         html += `<div class="div"></div><div class="loc-section-head">🚀 Launches Near You</div>`;
-
         nearbyLaunches.forEach(launch => {
             const enhanced = launch.enhanced || {};
             const status   = enhanced.status || { color:'#94a3b8', icon:'🚀', name:'Scheduled' };
             const ld       = new Date(launch.net);
             const dateStr  = ld.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' });
             const timeStr  = ld.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', timeZone:'UTC' });
-
             html += `
             <div style="background:linear-gradient(145deg,rgba(30,40,60,0.8),rgba(20,30,50,0.9));border-radius:16px;padding:16px;margin-bottom:12px;border-left:4px solid ${status.color};border:1px solid rgba(255,255,255,0.05);cursor:pointer;" onclick="window.open('${launch.url || '#'}','_blank')">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
@@ -706,42 +619,28 @@ async function _onGlobeLocationClick(lat, lng) {
                     </div>
                 </div>
                 <div style="background:rgba(0,0,0,0.2);padding:10px;border-radius:8px;font-size:0.75rem;display:flex;gap:12px;flex-wrap:wrap;">
-                    <div>📅 ${dateStr}</div>
-                    <div>⏰ ${timeStr} UTC</div>
+                    <div>📅 ${dateStr}</div><div>⏰ ${timeStr} UTC</div>
                     <div>📍 ${enhanced.padName || launch.pad?.name || 'Unknown pad'}</div>
                     ${launch.distance ? `<div style="margin-left:auto;">📏 ${Math.round(launch.distance)} km away</div>` : ''}
                 </div>
-                ${enhanced.isSoon ? `
-                <div style="margin-top:10px;background:linear-gradient(90deg,#f9731620,transparent);padding:6px 10px;border-radius:6px;font-size:0.7rem;color:#f97316;">
-                    ⚠️ Launch happening soon! Check webcast for live coverage.
-                </div>` : ''}
+                ${enhanced.isSoon ? `<div style="margin-top:10px;background:linear-gradient(90deg,#f9731620,transparent);padding:6px 10px;border-radius:6px;font-size:0.7rem;color:#f97316;">⚠️ Launch happening soon! Check webcast for live coverage.</div>` : ''}
             </div>`;
         });
-
         html += `<div class="ibox blue" style="text-align:center;cursor:pointer;" onclick="window.open('https://launchlibrary.net','_blank')">🚀 See all upcoming launches at Launch Library</div>`;
     }
 
-    // ── 7. SPACE WEATHER (now actually populated) ─────────────────────────
     if (spaceWeather?.aurora) {
         html += `
         <div class="div"></div>
         <div class="loc-section-head">☀️ Space Weather</div>
         <div class="loc-sw-grid">
-            <div class="loc-sw-card">
-                <div class="loc-sw-icon">🌌</div>
-                <div class="loc-sw-label">Aurora</div>
-                <div class="loc-sw-val" style="color:${spaceWeather.aurora.color}">${spaceWeather.aurora.probability}</div>
-            </div>
-            <div class="loc-sw-card">
-                <div class="loc-sw-icon">☢</div>
-                <div class="loc-sw-label">CME Activity</div>
-                <div class="loc-sw-val">${spaceWeather.cme_activity?.count || 0} events</div>
-            </div>
+            <div class="loc-sw-card"><div class="loc-sw-icon">🌌</div><div class="loc-sw-label">Aurora</div><div class="loc-sw-val" style="color:${spaceWeather.aurora.color}">${spaceWeather.aurora.probability}</div></div>
+            <div class="loc-sw-card"><div class="loc-sw-icon">☢</div><div class="loc-sw-label">CME Activity</div><div class="loc-sw-val">${spaceWeather.cme_activity?.count || 0} events</div></div>
         </div>
         <div class="ibox ${spaceWeather.cme_activity?.count > 0 ? 'gold' : 'green'}">${spaceWeather.summary}</div>`;
     }
 
-    // ── 8. IMPACT RISK (now actually populated) ───────────────────────────
+    // ── 8. IMPACT RISK ────────────────────────────────────────────────────
     if (impactRisk?.hazardous_count > 0) {
         html += `
         <div class="div"></div>
@@ -754,7 +653,6 @@ async function _onGlobeLocationClick(lat, lng) {
 
     // ── 9. SPACE-EARTH CONNECTION ─────────────────────────────────────────
     html += `<div class="div"></div><div class="loc-section-head">🌍 Space-Earth Connection</div>`;
-
     if (nearDisaster) {
         const { event, distKm, style, cat } = nearDisaster;
         const risk = RiskCalculator.disaster(event);
@@ -784,20 +682,19 @@ async function _onGlobeLocationClick(lat, lng) {
 
     showPanel(html);
 }
-
 // ═══════════════════════════════════════════
 //  HELPER FUNCTIONS
 // ═══════════════════════════════════════════
-
 async function _reverseGeocode(lat, lng) {
     try {
-        const r = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, {
-            headers: { 'Accept-Language': 'en', 'User-Agent': 'AstroView/1.0' }
-        });
+        const r = await fetch(`/api/geocode/reverse?lat=${lat}&lon=${lng}`);
+        if (!r.ok) return null;
         const j = await r.json();
         const a = j.address || {};
-        return [a.city || a.town || a.village || a.county || a.state, a.country].filter(Boolean).join(', ')
-               || j.display_name?.split(',').slice(0,2).join(', ') || null;
+        return [a.city || a.town || a.village || a.county || a.state, a.country]
+            .filter(Boolean).join(', ')
+            || j.display_name?.split(',').slice(0, 2).join(', ')
+            || null;
     } catch { return null; }
 }
 
@@ -814,8 +711,7 @@ async function _fetchLocationWeather(lat, lng) {
 async function _fetchISSPass(lat, lng) {
     try {
         const r = await fetch(`/api/iss-pass?lat=${lat.toFixed(2)}&lon=${lng.toFixed(2)}`);
-        const j = await r.json();
-        return j;
+        return await r.json();
     } catch { return null; }
 }
 
@@ -2032,94 +1928,25 @@ function _showPlanetDetailPanel(planet) {
 }
 
 // Update the goEarthImpact function in app.js
-function goEarthImpact() {
-    console.log('Switching to Earth Impact mode...');
-    
-    STATE.mode = 'impact';
+function goEarthImpact(){
+    STATE.mode='impact';
     document.getElementById('btn-impact').classList.add('active');
     document.getElementById('btn-solar').classList.remove('active');
     document.getElementById('btn-earth').classList.remove('active');
-    
-    // Hide other modes
     document.getElementById('solar-wrap').classList.add('hidden');
     document.getElementById('earth-wrap').classList.add('hidden');
-    
-    // Hide Earth-specific UI elements
     document.getElementById('layers').classList.remove('show');
     document.getElementById('chips').classList.remove('show');
-    document.getElementById('hint').textContent = 'Real-time Earth impact monitoring from NASA, NOAA, USGS';
-    
+    document.getElementById('hint').textContent='Real-time Earth impact monitoring from NASA, NOAA, USGS';
     closePanel();
+    if(window.LocationSearch)LocationSearch.hideForEarth();
     closeEarthSidebar();
-    
-    // Show impact container
-    let impactWrap = document.getElementById('impact-wrap');
-    if (!impactWrap) {
-        console.error('Impact wrap element not found!');
-        return;
-    }
+    const impactWrap=document.getElementById('impact-wrap');
+    if(!impactWrap){console.error('Impact wrap element not found!');return;}
     impactWrap.classList.remove('hidden');
-    
-    // Check if EarthImpact is defined
-    if (typeof EarthImpact === 'undefined') {
-        console.error('EarthImpact is not defined!');
-        impactWrap.innerHTML = `
-            <div class="earth-impact-container">
-                <div style="color: #ef4444; padding: 40px; text-align: center;">
-                    <h2>❌ Earth Impact module failed to load</h2>
-                    <p>Please check that components/EarthImpact.js exists</p>
-                </div>
-            </div>
-        `;
-        return;
-    }
-    
-    // Initialize Earth Impact if not already done
-    if (!window.earthImpactInitialized) {
-        try {
-            EarthImpact.init();
-            window.earthImpactInitialized = true;
-            console.log('EarthImpact initialized successfully');
-        } catch (error) {
-            console.error('Failed to initialize EarthImpact:', error);
-            impactWrap.innerHTML = `
-                <div class="earth-impact-container">
-                    <div style="color: #ef4444; padding: 40px; text-align: center;">
-                        <h2>❌ Failed to initialize Earth Impact</h2>
-                        <p>Error: ${error.message}</p>
-                    </div>
-                </div>
-            `;
-            return;
-        }
-    }
-    
-    // Subscribe to updates
-    try {
-        // Clear any existing subscription
-        if (window.impactUnsubscribe) {
-            window.impactUnsubscribe();
-        }
-        
-        // Subscribe with a function that updates the UI
-        window.impactUnsubscribe = EarthImpact.subscribe((state) => {
-            if (typeof EarthImpactUI !== 'undefined') {
-                EarthImpactUI.render('impact-wrap', state);
-            } else {
-                console.error('EarthImpactUI is not defined');
-                impactWrap.innerHTML = `
-                    <div class="earth-impact-container">
-                        <div style="color: #ef4444; padding: 40px; text-align: center;">
-                            <h2>❌ EarthImpactUI failed to load</h2>
-                            <p>Please check that components/EarthImpactUI.js exists</p>
-                        </div>
-                    </div>
-                `;
-            }
-        });
-    } catch (error) {
-        console.error('Failed to subscribe to EarthImpact:', error);
-    }
+    if(typeof EarthImpact==='undefined'){console.error('EarthImpact not defined');impactWrap.innerHTML=`<div class="earth-impact-container"><div style="color:#ef4444;padding:40px;text-align:center;"><h2>❌ Earth Impact module failed to load</h2><p>Please check that components/EarthImpact.js exists</p></div></div>`;return;}
+    if(!window.earthImpactInitialized){try{EarthImpact.init();window.earthImpactInitialized=true;}catch(error){console.error('Failed to initialize EarthImpact:',error);impactWrap.innerHTML=`<div class="earth-impact-container"><div style="color:#ef4444;padding:40px;text-align:center;"><h2>❌ Failed to initialize Earth Impact</h2><p>Error: ${error.message}</p></div></div>`;return;}}
+    try{if(window.impactUnsubscribe)window.impactUnsubscribe();window.impactUnsubscribe=EarthImpact.subscribe((state)=>{if(typeof EarthImpactUI!=='undefined')EarthImpactUI.render('impact-wrap',state);else{console.error('EarthImpactUI not defined');impactWrap.innerHTML=`<div class="earth-impact-container"><div style="color:#ef4444;padding:40px;text-align:center;"><h2>❌ EarthImpactUI failed to load</h2></div></div>`;}});}catch(error){console.error('Failed to subscribe to EarthImpact:',error);}
 }
 
 // ================= CHATBOT =================
@@ -2168,83 +1995,51 @@ closeBtn.addEventListener("click", () => {
 }
 
 // Initialize after page load
-window.addEventListener('DOMContentLoaded', initChatbot);
-
 async function _fetchSatellitePasses(lat, lng) {
     try {
-        // 1️⃣ Get ALL satellites above this location
-        const aboveData = await N2YOService.getSatellitesAbove(lat, lng, 70, 0);
+        const popularSats = await N2YOService.getPopularSatellites();
+        const candidates = popularSats.slice(0, 6);
 
-        if (!aboveData || !aboveData.above) return null;
+        const results = await Promise.all(
+            candidates.map(async (sat) => {
+                // 10 days window, 5° min elevation — catches more passes at all latitudes
+                const data = await N2YOService.getVisualPasses(sat.id, lat, lng, 10, 5);
+                if (!data?.passes?.length) return null;
+                return {
+                    satellite: {
+                        id:       sat.id,
+                        name:     sat.name,
+                        category: sat.category,
+                        icon:     sat.icon,
+                        color:    sat.color,
+                    },
+                    passes: data.passes,
+                };
+            })
+        );
 
-        // 2️⃣ Filter good candidates
-        const candidates = aboveData.above
-            .filter(sat => sat.satalt > 200)   // ignore debris
-            .slice(0, 10);                     // prevent rate limit
-
-        const passes = [];
-
-        // 3️⃣ Get visual passes for each satellite
-        for (const sat of candidates) {
-            const data = await N2YOService.getVisualPasses(
-                sat.satid,
-                lat,
-                lng,
-                3,   // next 3 days
-                20   // minimum elevation
+        const passes = results
+            .filter(Boolean)
+            .sort((a, b) =>
+                N2YOService.calculatePassScore(b.passes[0]) -
+                N2YOService.calculatePassScore(a.passes[0])
             );
 
-            if (data && data.passes && data.passes.length > 0) {
-                passes.push({
-                    satellite: {
-                        id: sat.satid,
-                        name: sat.satname,
-                        category: sat.intDesignator || "Satellite",
-                        icon: '🛰️',
-                        color: '#94a3b8'
-                    },
-                    passes: data.passes
-                });
-            }
-        }
-
-        passes.sort((a, b) => {
-            const scoreA = N2YOService.calculatePassScore(a.passes[0]);
-            const scoreB = N2YOService.calculatePassScore(b.passes[0]);
-            return scoreB - scoreA;
-        });
-
-
-        return passes;
-
+        console.log(`[SatPasses] Got passes for ${passes.length} satellites`);
+        return passes.length > 0 ? passes : null;
     } catch (error) {
-        console.warn('Satellite passes error:', error);
+        console.warn('[SatPasses] Error:', error);
         return null;
     }
 }
 
-
-async function _fetchNearbyLaunches(lat, lng) {
-    try {
-        if (typeof LaunchService === 'undefined') {
-            console.warn('LaunchService not available');
-            return null;
-        }
-        
-        // Get launches within 2000km of clicked location
-        const launches = await LaunchService.getLaunchesByLocation(lat, lng, 2000);
-        return launches.slice(0, 5); // Return top 5 closest launches
-    } catch (error) {
-        console.warn('Failed to fetch nearby launches:', error);
-        return null;
-    }
+async function _fetchNearbyLaunches(lat,lng){
+    try{
+        if(typeof LaunchService==='undefined'){console.warn('LaunchService not available');return null;}
+        const launches=await LaunchService.getLaunchesByLocation(lat,lng,2000);
+        return launches.slice(0,5);
+    }catch(error){console.warn('Failed to fetch nearby launches:',error);return null;}
 }
-// Add this section to your HTML generation in _onGlobeLocationClick
-// after the ISS Pass section:
-
-
-
-
 // Make function globally available
 
 // ── BOOT ──
@@ -2252,11 +2047,18 @@ _initSolar();
 _solarLoop();
 setTimeout(_tickLoad, 300);
 
+// Initialize Location Search
+// Expose location click handler for LocationSearch
+window.addEventListener('load', () => {
+    window._onGlobeLocationClick = _onGlobeLocationClick;
+    if (window.LocationSearch) LocationSearch.init();
+});
+
 // Make functions globally available
-window.goSolar = goSolar;
-window.goEarth = goEarth;
-window.toggleLayer = toggleLayer;
-window.saveKeys = saveKeys;
-window.closePanel = closePanel;
-window.closeEarthSidebar = closeEarthSidebar;
-window.goEarthImpact = goEarthImpact;
+window.goSolar=goSolar;
+window.goEarth=goEarth;
+window.toggleLayer=toggleLayer;
+window.saveKeys=saveKeys;
+window.closePanel=closePanel;
+window.closeEarthSidebar=closeEarthSidebar;
+window.goEarthImpact=goEarthImpact;
