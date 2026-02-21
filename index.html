@@ -22,7 +22,7 @@
     <!-- Styles -->
     <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="preload">
 
     <!-- LOADING -->
     <div id="loading">
@@ -41,6 +41,7 @@
             <button class="mbtn" id="btn-impact" onclick="goEarthImpact()">🌋 Earth Impact</button>
             <button class="api-badge" onclick="document.getElementById('apiModal').classList.add('show')">⚙ API Keys</button>
         </div>
+        <button class="mbtn" id="btn-gallery" onclick="goGallery()">🖼 Space Gallery</button>
     </nav>
 
     <!-- ALERTS -->
@@ -54,14 +55,8 @@
     <!-- GLOBE.GL EARTH -->
     <div id="earth-wrap" class="hidden">
         <div id="globeViz"></div>
-    </div>
 
-    <!-- EARTH IMPACT MONITORING -->
-    <div id="impact-wrap" class="hidden">
-        <!-- EarthImpactUI will render here -->
-    </div>
-
-    <!-- EARTH INFO SIDEBAR (Earth Intel Mode) -->
+        <!-- EARTH INFO SIDEBAR (Earth Intel Mode) -->
     <div id="earth-info-sidebar">
         <button class="earth-close-btn" onclick="closeEarthSidebar()">✕</button>
         <div class="earth-sidebar-content">
@@ -207,6 +202,23 @@
             </div>
         </div>
     </div>
+    </div>
+
+    <!-- EARTH IMPACT MONITORING -->
+    <div id="impact-wrap" class="hidden">
+        <!-- EarthImpactUI will render here -->
+    </div>
+
+    <!-- SPACE GALLERY -->
+<div id="gallery-wrap" class="hidden">
+    <div class="gallery-header">
+        <div class="gallery-title">🌌 Deep Space Gallery</div>
+        <div class="gallery-sub">Latest breathtaking space imagery</div>
+    </div>
+    <div id="gallery-grid"></div>
+</div>
+
+    
 
     <!-- CHIPS (Earth mode) -->
     <div id="chips">

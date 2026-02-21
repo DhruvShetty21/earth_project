@@ -58,6 +58,21 @@ function _finishLoad() {
             GlobeView.updateISS(pos, _currentGlobeData());
         }
     });
+
+    document.body.classList.remove('preload');
+}
+
+function _hideAllModes() {
+    document.getElementById('solar-wrap').classList.add('hidden');
+    document.getElementById('earth-wrap').classList.add('hidden');
+    document.getElementById('impact-wrap').classList.add('hidden');
+    document.getElementById('gallery-wrap').classList.add('hidden');
+
+    // remove active state from all buttons
+    document.getElementById('btn-solar').classList.remove('active');
+    document.getElementById('btn-earth').classList.remove('active');
+    document.getElementById('btn-impact').classList.remove('active');
+    document.getElementById('btn-gallery').classList.remove('active');
 }
 
 function formatDuration(seconds) {
@@ -163,63 +178,39 @@ function _showAlert(msg, type = 'warn') {
 //  MODE SWITCHING
 // ═══════════════════════════════════════════
 function goSolar() {
-    console.log('Switching to Solar System mode...');
-    
     STATE.mode = 'solar';
-    document.getElementById('btn-solar').classList.add('active');
-    document.getElementById('btn-earth').classList.remove('active');
-    document.getElementById('btn-impact').classList.remove('active');
-    
-    // Hide other modes
-    document.getElementById('earth-wrap').classList.add('hidden');
-    document.getElementById('impact-wrap').classList.add('hidden');
-    
-    // Show solar mode
+    _hideAllModes();
+
     document.getElementById('solar-wrap').classList.remove('hidden');
-    
-    // Hide Earth-specific UI elements
+    document.getElementById('btn-solar').classList.add('active');
+
     document.getElementById('layers').classList.remove('show');
     document.getElementById('chips').classList.remove('show');
-    document.getElementById('hint').textContent = 'Click any planet to explore · Earth opens Intel Mode';
-    
     closePanel();
     closeEarthSidebar();
-    
-    // Ensure solar animation is running
+
     if (!_solarRaf) {
         _solarLoop();
     }
 }
 
 function goEarth() {
-    console.log('Switching to Earth Intel mode...');
-    
     STATE.mode = 'earth';
-    document.getElementById('btn-earth').classList.add('active');
-    document.getElementById('btn-solar').classList.remove('active');
-    document.getElementById('btn-impact').classList.remove('active');
-    
-    // Hide other modes
-    document.getElementById('solar-wrap').classList.add('hidden');
-    document.getElementById('impact-wrap').classList.add('hidden');
-    
-    // Show Earth mode
+    _hideAllModes();
+
     document.getElementById('earth-wrap').classList.remove('hidden');
-    
-    // Show Earth-specific UI elements
+    document.getElementById('btn-earth').classList.add('active');
+
     document.getElementById('layers').classList.add('show');
     document.getElementById('chips').classList.add('show');
-    document.getElementById('hint').textContent = 'Click anywhere on Earth for local space intel · Click markers for live events';
-    
+
     closePanel();
-    
-    // Show Earth info sidebar
+
     setTimeout(() => {
         document.getElementById('earth-info-sidebar').classList.add('show');
         _updateEarthSidebarData();
     }, 300);
-    
-    // Initialize or refresh globe
+
     _ensureGlobeAndRefresh();
 }
 
@@ -2142,6 +2133,64 @@ closeBtn.addEventListener("click", () => {
 
 // Initialize after page load
 window.addEventListener('DOMContentLoaded', initChatbot);
+
+function goGallery() {
+    STATE.mode = 'gallery';
+    _hideAllModes();
+
+    document.getElementById('gallery-wrap').classList.remove('hidden');
+    document.getElementById('btn-gallery').classList.add('active');
+
+    document.getElementById('layers').classList.remove('show');
+    document.getElementById('chips').classList.remove('show');
+
+    closePanel();
+    loadGallery();
+}
+
+async function loadGallery() {
+    const grid = document.getElementById('gallery-grid');
+    grid.innerHTML = '<div style="color:var(--muted)">Loading cosmic imagery...</div>';
+
+    try {
+        const response = await fetch(
+            `https://api.nasa.gov/planetary/apod?api_key=zeJb8WPp9idjajWvnk1ZDoAjF8cQIC7Upsni2dy4&count=16`
+        );
+
+        const data = await response.json();
+
+        grid.innerHTML = '';
+
+        data
+            .filter(item => item.media_type === 'image')
+            .forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'gallery-card';
+
+                card.innerHTML = `
+                    <img src="${item.url}" alt="${item.title}">
+                    <div class="gallery-info">
+                        <h3>${item.title}</h3>
+                        <span>${item.date}</span>
+                    </div>
+                `;
+
+                card.onclick = () => {
+                    showPanel(`
+                        <div class="ptag planet">NASA APOD</div>
+                        <div class="ptitle">${item.title}</div>
+                        <div class="psub">${item.explanation}</div>
+                        <img src="${item.hdurl || item.url}" style="width:100%;border-radius:8px;margin-top:10px">
+                    `);
+                };
+
+                grid.appendChild(card);
+            });
+    } catch (error) {
+        grid.innerHTML = '<div style="color:var(--red)">Failed to load images.</div>';
+        console.error(error);
+    }
+}
 
 async function _fetchSatellitePasses(lat, lng) {
     try {
