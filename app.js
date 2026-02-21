@@ -214,8 +214,10 @@ function goSolar() {
     document.getElementById('btn-impact').classList.remove('active');
     
     // Hide other modes
-    document.getElementById('earth-wrap').classList.add('hidden');
-    document.getElementById('impact-wrap').classList.add('hidden');
+document.getElementById('earth-wrap').classList.add('hidden');
+document.getElementById('impact-wrap').classList.add('hidden');
+document.getElementById('gallery-wrap').classList.add('hidden');
+document.getElementById('btn-gallery').classList.remove('active');
     
     // Show solar mode
     document.getElementById('solar-wrap').classList.remove('hidden');
@@ -242,8 +244,11 @@ function goEarth() {
     document.getElementById('btn-impact').classList.remove('active');
     
     // Hide other modes
+        // Hide other modes
     document.getElementById('solar-wrap').classList.add('hidden');
     document.getElementById('impact-wrap').classList.add('hidden');
+    document.getElementById('gallery-wrap').classList.add('hidden');
+    document.getElementById('btn-gallery').classList.remove('active');
     
     // Show Earth mode
     document.getElementById('earth-wrap').classList.remove('hidden');
@@ -1971,6 +1976,8 @@ function goEarthImpact(){
     document.getElementById('btn-earth').classList.remove('active');
     document.getElementById('solar-wrap').classList.add('hidden');
     document.getElementById('earth-wrap').classList.add('hidden');
+    document.getElementById('gallery-wrap').classList.add('hidden');
+    document.getElementById('btn-gallery').classList.remove('active');
     document.getElementById('layers').classList.remove('show');
     document.getElementById('chips').classList.remove('show');
     document.getElementById('hint').textContent='Real-time Earth impact monitoring from NASA, NOAA, USGS';
@@ -2045,8 +2052,11 @@ function goGallery() {
 
     document.getElementById('layers').classList.remove('show');
     document.getElementById('chips').classList.remove('show');
+    document.getElementById('hint').textContent = 'Click any image to explore · NASA Astronomy Picture of the Day';
 
     closePanel();
+    if (window.LocationSearch) LocationSearch.hideForEarth();
+    closeEarthSidebar();
     loadGallery();
 }
 
