@@ -33,7 +33,7 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
 /* ── WRAPPERS ── */
 #solar-wrap, #earth-wrap {
     position: fixed; inset: 0;
-    transition: opacity .5s ease, transform .5s ease;
+    transition: opacity 0.35s ease, transform 0.35s ease;
 }
 #solar-wrap.hidden { opacity: 0; pointer-events: none; transform: scale(.97); }
 #earth-wrap.hidden { opacity: 0; pointer-events: none; transform: scale(1.03); }
@@ -1112,3 +1112,85 @@ body.impact-mode #hint {
     opacity: 1;
 }
 
+/* Space Gallery */
+
+/* ───────── SPACE GALLERY ───────── */
+
+#gallery-wrap {
+    position: fixed;
+    inset: 0;
+    overflow-y: auto;
+    background: radial-gradient(circle at 20% 30%, #070718, #010108 70%);
+    padding: 100px 40px 60px;
+    transition: opacity .1s ease, transform .1s ease;
+}
+
+#gallery-wrap.hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(.98);
+}
+
+.gallery-header {
+    margin-bottom: 40px;
+}
+
+.gallery-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 2rem;
+    letter-spacing: 3px;
+    background: linear-gradient(120deg, var(--cyan), var(--blue));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.gallery-sub {
+    font-size: .85rem;
+    color: var(--muted);
+    margin-top: 8px;
+}
+
+#gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 24px;
+}
+
+.gallery-card {
+    background: rgba(15,15,35,.9);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform .25s ease, box-shadow .25s ease;
+}
+
+.gallery-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 0 25px rgba(0,212,255,.25);
+}
+
+.gallery-card img {
+    width: 100%;
+    height: 220px;
+    object-fit: cover;
+    display: block;
+}
+
+.gallery-info {
+    padding: 14px;
+}
+
+.gallery-info h3 {
+    font-size: .85rem;
+    margin-bottom: 6px;
+}
+
+.gallery-info span {
+    font-size: .7rem;
+    color: var(--muted);
+}
+
+.preload * {
+    transition: none !important;
+}

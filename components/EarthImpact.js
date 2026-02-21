@@ -508,45 +508,56 @@ const EarthImpact = (() => {
     // ════════════════════════════════════════════════════════════════════════
 
     async function _fetchAirQuality() {
-        // Global representative cities
-        const cities = [
-            { name: 'Delhi',     lat: 28.6,  lon: 77.2 },
-            { name: 'Beijing',   lat: 39.9,  lon: 116.4 },
-            { name: 'NYC',       lat: 40.7,  lon: -74.0 },
-            { name: 'London',    lat: 51.5,  lon: -0.12 },
-            { name: 'Nairobi',   lat: -1.3,  lon: 36.8 },
-        ];
+    const API_KEY = '32967febdfd01748254617e3f0f32ddd';
 
-        try {
-            const results = await Promise.allSettled(
-                cities.map(c => {
-                    const url = `${APIS.OPEN_METEO_AIR}?latitude=${c.lat}&longitude=${c.lon}` +
-                        `&hourly=pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,ozone,dust,uv_index&timezone=UTC&forecast_days=1`;
-                    return _get(url).then(r => r.json()).then(d => ({ city: c.name, data: d }));
-                })
-            );
-            const cityAQ = results
-                .filter(r => r.status === 'fulfilled')
-                .map(r => {
-                    const { city, data } = r.value;
-                    const h   = data.hourly;
-                    const last = i => h[i]?.filter(v => v != null).at(-1) ?? 0;
-                    const pm25 = last('pm2_5');
-                    // WHO AQI scale for PM2.5
-                    const aqi  = pm25 < 5 ? 1 : pm25 < 15 ? 2 : pm25 < 25 ? 3 : pm25 < 50 ? 4 : 5;
-                    const aqiLabel = ['','Good','Moderate','Unhealthy(S)','Unhealthy','Hazardous'];
-                    return { city, pm25: +pm25.toFixed(1), pm10: +last('pm10').toFixed(1), aqi, aqiLabel: aqiLabel[aqi], no2: +last('nitrogen_dioxide').toFixed(1), o3: +last('ozone').toFixed(1) };
-                });
+    const cities = [
+        { name: 'Delhi',   lat: 28.6,  lon: 77.2 },
+        { name: 'Beijing', lat: 39.9,  lon: 116.4 },
+        { name: 'NYC',     lat: 40.7,  lon: -74.0 },
+        { name: 'London',  lat: 51.5,  lon: -0.12 },
+        { name: 'Nairobi', lat: -1.3,  lon: 36.8 },
+    ];
 
-            const avgPM25 = +(cityAQ.reduce((s, c) => s + c.pm25, 0) / cityAQ.length).toFixed(1);
-            const worstCity = cityAQ.sort((a, b) => b.pm25 - a.pm25)[0];
-            const uvData    = await _fetchUV();
+    try {
+        const results = await Promise.all(
+            cities.map(async (c) => {
+                const url = `https://api.openweathermap.org/data/2.5/air_pollution?lat=${c.lat}&lon=${c.lon}&appid=${API_KEY}`;
+                const res = await fetch(url);
+                const data = await res.json();
 
-            return { cities: cityAQ, avgPM25, worstCity: worstCity?.city, uvIndex: uvData, source: 'Open-Meteo Air Quality', lastUpdated: new Date().toISOString() };
-        } catch {
-            return _fallbacks.airQuality();
-        }
+                const entry = data.list[0];
+
+                return {
+                    city: c.name,
+                    aqi: entry.main.aqi,   // 1–5 official index
+                    pm25: entry.components.pm2_5,
+                    pm10: entry.components.pm10,
+                    no2: entry.components.no2,
+                    o3: entry.components.o3
+                };
+            })
+        );
+
+        // Rank by AQI (higher = worse)
+        const ranked = results.sort((a, b) => b.aqi - a.aqi);
+
+        const avgAQI = Math.round(
+            ranked.reduce((sum, c) => sum + c.aqi, 0) / ranked.length
+        );
+
+        return {
+            cities: ranked,
+            worstCity: ranked[0]?.city,
+            avgAQI,
+            source: 'OpenWeather Air Pollution API',
+            lastUpdated: new Date().toISOString()
+        };
+
+    } catch (err) {
+        console.error(err);
+        return _fallbacks.airQuality();
     }
+}
 
     async function _fetchUV() {
         try {
