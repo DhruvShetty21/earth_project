@@ -270,10 +270,13 @@ function toggleLayer(name, btn) {
     }
 }
 
+
+
 // ═══════════════════════════════════════════
 //  MARKER CLICK → PANEL
 // ═══════════════════════════════════════════
 // Update the _onMarkerClick function in app.js
+
 
 function _onMarkerClick(d) {
     if (d.type === 'iss') {
@@ -2261,6 +2264,8 @@ async function _fetchNearbyLaunches(lat, lng) {
         return null;
     }
 }
+
+
 // Add this section to your HTML generation in _onGlobeLocationClick
 // after the ISS Pass section:
 

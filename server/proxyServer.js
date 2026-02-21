@@ -19,6 +19,21 @@ app.use(express.static(path.join(__dirname, '..')));
 // Cache for API responses
 const cache = new Map();
 
+
+const nodemailer = require('nodemailer');
+const cron = require('node-cron');
+
+require('dotenv').config();
+
+let reminders = [];
+
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    }
+});
 // ============= ASTRONOMICAL CALCULATION FUNCTIONS =============
 
 // Convert degrees to radians
@@ -346,6 +361,8 @@ app.get('/api/events/location', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+
+
 
 // 2. Get visibility for a specific event at a location
 app.get('/api/events/:eventId/visibility', async (req, res) => {
@@ -759,6 +776,32 @@ app.get('/api/eonet/:category', async (req, res) => {
     } catch (error) {
         res.status(502).json({ error: 'EONET category fetch failed', detail: error.message });
     }
+});
+
+cron.schedule('* * * * *', async () => {
+
+    const now = new Date();
+
+    for (let reminder of reminders) {
+
+        if (!reminder.sent && new Date(reminder.notifyTime) <= now) {
+
+            await transporter.sendMail({
+                from: process.env.EMAIL_USER,
+                to: reminder.email,
+                subject: `🚀 Launch Reminder - ${reminder.eventName}`,
+                html: `
+                    <h2>Launch Reminder</h2>
+                    <p>${reminder.eventName} launches in 20 minutes!</p>
+                    <p>Launch Time: ${new Date(reminder.launchTime).toLocaleString()}</p>
+                `
+            });
+
+            reminder.sent = true;
+            console.log('Reminder email sent to', reminder.email);
+        }
+    }
+
 });
 
 // Start server
