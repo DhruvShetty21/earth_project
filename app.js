@@ -44,7 +44,7 @@ function _finishLoad() {
     el.style.opacity = '0'; el.style.transition = 'opacity 0.7s ease';
     setTimeout(() => el.remove(), 750);
 
-    document.getElementById('key-nasa').value    = STATE.keys.nasa !== STATE.keys.nasa;
+    document.getElementById('key-nasa').value    = STATE.keys.nasa || '';
     document.getElementById('key-weather').value = STATE.keys.weather;
     document.getElementById('key-city').value    = STATE.keys.city;
 
@@ -720,6 +720,37 @@ async function _onGlobeLocationClick(lat, lng) {
         <div style="font-size:0.65rem;color:var(--muted);text-align:center;padding:8px;">
             🌐 Data: NASA EONET · SpaceDevs · Open-Notify · OpenWeather · N2YO
         </div>`;
+
+    const _shareData = {
+        weatherData,
+        vis,
+        issPass,
+        spaceDevsEvents,
+        spaceWeather,
+        locationVisibility,
+        impactRisk,
+        satellitePasses,
+        nearbyLaunches,
+        nearDisaster,
+    };
+
+    const _sharePaylod = _buildSharePayload(
+        displayName,
+        coords,
+        _shareData
+    );
+
+    // ── Append Share button to the panel HTML ─────────────────────────────
+    // ── Store share data globally (never pass strings inline in onclick) ──
+    window._lastSharePayload  = _sharePaylod;
+    window._lastShareLocation = displayName;
+
+    // ── Append Share button to the panel HTML ─────────────────────────────
+    html += `
+        <div class="div"></div>
+        <button class="share-intel-btn" onclick="window._openShareModal(window._lastShareLocation, window._lastSharePayload)">
+            📡 Share This Report via Email / SMS
+        </button>`;
 
     showPanel(html);
 }
