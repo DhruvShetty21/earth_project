@@ -220,6 +220,9 @@
 
     
 
+    <!-- LIVE STATUS INDICATOR -->
+    <div id="live-status" style="display:none;"></div>
+
     <!-- CHIPS (Earth mode) -->
     <div id="chips">
         <div class="chip"><span class="cdot cdot-live"></span><span id="chip-iss">ISS — loading…</span></div>
@@ -253,11 +256,6 @@
     <!-- API KEY MODAL -->
     <div id="apiModal">
         <div class="modal-box">
-            <div class="modal-title">🔑 API Configuration</div>
-            <div class="modal-sub">
-                Enter your API keys to enable live data. Keys are stored in your browser only —
-                never sent anywhere except directly to the respective APIs.
-            </div>
             <div class="field">
                 <label>NASA API Key (APOD, NeoWs, EONET, DONKI, FIRMS)</label>
                 <input type="text" id="key-nasa" placeholder="1c8XmhiDWqkHiogI31sfd5IpO0m2SpsyzTX3cA7y"/>
@@ -305,6 +303,12 @@
     <script src="services/neoVisualization.js"></script>
     <script src="services/firmsService.js"></script>
     <script src="services/chatService.js"></script>
+    
+    <!-- Enhanced Real-time Services -->
+    <script src="services/realtimeService.js"></script>
+    <script src="services/enhancedWeatherService.js"></script>
+    <script src="services/enhancedSatelliteService.js"></script>
+    <script src="services/liveDataManager.js"></script>
 
     
     <script src="hooks/useISSPosition.js"></script>
@@ -315,7 +319,11 @@
     <!-- Earth Impact Components -->
     <script src="components/EarthImpact.js"></script>
     <script src="components/EarthImpactUI.js"></script>
-    
+    <script src="components/DynamicEarthImpact.js"></script>
+    <script src="components/DynamicEarthImpactUI.js"></script>
+    <script src="ui/LocationSearch.js"></script>
+    <script src="ui/shareFeature.js"></script>
+
     <!-- Main App -->
     <script src="app.js"></script>
 
