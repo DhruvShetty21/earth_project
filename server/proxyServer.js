@@ -16,6 +16,21 @@ app.use(express.json()); // ← must come before route definitions
 // Cache for API responses
 const cache = new Map();
 
+
+const nodemailer = require('nodemailer');
+const cron = require('node-cron');
+
+require('dotenv').config();
+
+let reminders = [];
+
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    }
+});
 // ============= ASTRONOMICAL CALCULATION FUNCTIONS =============
 
 function degToRad(deg) { return deg * Math.PI / 180; }
@@ -395,6 +410,25 @@ app.get('/api/eonet', async (req, res) => {
     } catch (error) {
         console.error('[EONET] Fetch failed:', error.message);
         res.status(502).json({ error: 'EONET fetch failed', detail: error.message });
+    }
+});
+
+app.get('/api/moon-phase', async (req, res) => {
+    try {
+        const { lat, lon } = req.query;
+        const apiKey = process.env.WEATHERAPI_KEY;
+
+        if (!lat || !lon)
+            return res.status(400).json({ error: 'Latitude and longitude required' });
+
+        const url = `https://api.weatherapi.com/v1/astronomy.json?key=${apiKey}&q=${lat},${lon}`;
+
+        const response = await axios.get(url);
+        res.json(response.data);
+
+    } catch (error) {
+        console.error('Moon phase error:', error.message);
+        res.status(500).json({ error: error.message });
     }
 });
 

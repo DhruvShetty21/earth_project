@@ -324,6 +324,8 @@ function toggleLayer(name, btn) {
     }
 }
 
+
+
 // ═══════════════════════════════════════════
 //  MARKER CLICK → PANEL
 // ═══════════════════════════════════════════
@@ -345,9 +347,57 @@ function _onMarkerClick(d) {
     }
 }
 
+
+// MOON PHASE
+function _getMoonIcon(phase) {
+    const map = {
+        "New Moon": "🌑",
+        "Waxing Crescent": "🌒",
+        "First Quarter": "🌓",
+        "Waxing Gibbous": "🌔",
+        "Full Moon": "🌕",
+        "Waning Gibbous": "🌖",
+        "Last Quarter": "🌗",
+        "Waning Crescent": "🌘"
+    };
+    return map[phase] || "🌑";
+}
 // ═══════════════════════════════════════════
 //  API FETCH FUNCTIONS FOR LOCATION
 // ═══════════════════════════════════════════
+
+async function _fetchLocationVisibility(lat, lng) {
+    try {
+        const moonRes = await fetch(`/api/moon-phase?lat=${lat}&lon=${lng}`);
+        if (!moonRes.ok) throw new Error("Moon API failed");
+
+        const moonData = await moonRes.json();
+        const astro = moonData.astronomy?.astro;
+
+        const phaseName = astro?.moon_phase || "Unknown";
+        const illumination = astro?.moon_illumination || "0";
+
+        return {
+            analysis: {
+                moon_phase: {
+                    name: phaseName,
+                    icon: _getMoonIcon(phaseName)
+                },
+                illumination: illumination
+            }
+        };
+
+    } catch (err) {
+        console.warn('Moon fetch failed:', err);
+        return {
+            analysis: {
+                moon_phase: { name: "Unavailable", icon: "🌑" },
+                illumination: "0"
+            }
+        };
+    }
+}
+
 async function _fetchSkyEvents(lat, lng) {
     try {
         const response = await fetch(`/api/sky-tonight/events?lat=${lat}&lon=${lng}`);
@@ -372,45 +422,7 @@ async function _fetchImpactRisk(lat, lng) {
     } catch (error) { console.warn('Impact risk error:', error); return null; }
 }
 
-async function _fetchLocationVisibility(lat, lng) {
-    try {
-        const now       = new Date();
-        const moonPct   = (VisibilityScore.compute(null).moonPct || 0) / 100;
-        const dayOfYear = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000);
-        const dec       = 23.45 * Math.sin(((dayOfYear - 81) * 360 / 365) * Math.PI / 180);
-        const latRad    = lat * Math.PI / 180;
-        const decRad    = dec * Math.PI / 180;
 
-        let nightHours = 12;
-        try {
-            const cosHA = -Math.tan(latRad) * Math.tan(decRad);
-            if      (cosHA < -1) nightHours = 0;
-            else if (cosHA >  1) nightHours = 24;
-            else nightHours = Math.round(24 - (2 / 15) * (Math.acos(cosHA) * 180 / Math.PI));
-        } catch (_) {}
-
-        const PHASES = [
-            { icon: '🌑', name: 'New Moon',        max: 0.06 },
-            { icon: '🌒', name: 'Waxing Crescent', max: 0.25 },
-            { icon: '🌓', name: 'First Quarter',   max: 0.31 },
-            { icon: '🌔', name: 'Waxing Gibbous',  max: 0.50 },
-            { icon: '🌕', name: 'Full Moon',        max: 0.56 },
-            { icon: '🌖', name: 'Waning Gibbous',  max: 0.75 },
-            { icon: '🌗', name: 'Last Quarter',     max: 0.81 },
-            { icon: '🌘', name: 'Waning Crescent',  max: 1.00 },
-        ];
-        const moonPhase = PHASES.find(p => moonPct <= p.max) || PHASES[7];
-
-        let nightDesc = `${nightHours} hours of darkness expected tonight.`;
-        if (nightHours < 6)  nightDesc += ' Short night — limited observation window.';
-        if (nightHours > 14) nightDesc += ' Long night — excellent for extended observation.';
-
-        return { analysis: { night_hours: nightHours, moon_phase: moonPhase, night_description: nightDesc } };
-    } catch (err) {
-        console.warn('_fetchLocationVisibility error:', err);
-        return { analysis: { night_hours: 12, moon_phase: { icon: '🌑', name: 'Unknown' }, night_description: 'Night data unavailable.' } };
-    }
-}
 
 async function _fetchSpaceDevsEvents(lat, lng, days = 90) {
     try {
@@ -495,18 +507,12 @@ async function _onGlobeLocationClick(lat, lng) {
                 <div class="loc-sky-desc">${vis.message}</div>
                 <div class="loc-sky-weather">${desc} · ${tempC}°C · ${clouds}% cloud · ${Math.round(weatherData.wind?.speed || 0)} m/s wind</div>
             </div>
-        </div>
-        <div class="loc-moon-row">🌙 ${VisibilityScore.moonDescription(vis.moonPct / 100)}</div>`;
+        </div>`;
     } else {
         html += `
         <div class="loc-no-weather">
             <div class="loc-no-weather-icon">🌤</div>
-            <div>
-                <div style="font-weight:600;margin-bottom:4px">Add OpenWeather key for live sky conditions</div>
-                <div style="font-size:.78rem;color:var(--muted)">Click <strong>⚙ API Keys</strong> → paste your free key from openweathermap.org</div>
-            </div>
-        </div>
-        <div class="loc-moon-row">🌙 ${VisibilityScore.moonDescription(vis.moonPct / 100)}</div>`;
+        </div>`;
     }
 
     // ── 2. LOCATION VISIBILITY ANALYSIS ──────────────────────────────────
@@ -514,10 +520,11 @@ async function _onGlobeLocationClick(lat, lng) {
         const a = locationVisibility.analysis;
         html += `
         <div class="fgrid" style="margin-top:12px">
-            <div class="fcard"><div class="flbl">Night duration</div><div class="fval">${a.night_hours}h</div></div>
-            <div class="fcard"><div class="flbl">Moon phase</div><div class="fval">${a.moon_phase?.icon || '🌑'} ${a.moon_phase?.name || ''}</div></div>
-        </div>
-        <div class="ibox blue">${a.night_description}</div>`;
+            <div class="fcard"><div class="flbl">Moon phase</div><div class="fval">🌙 ${a.moon_phase?.icon} ${a.moon_phase?.name}
+<br><span style="font-size:.75rem;color:var(--muted)">
+${a.illumination}% illuminated
+</span></div></div>
+        </div>`;
     }
 
     // ── 3. SPACE DEVS EVENTS ─────────────────────────────────────────────
