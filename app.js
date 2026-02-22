@@ -67,6 +67,7 @@ function _finishLoad() {
                 if (GlobeView.isReady()) {
                     GlobeView.refresh(_currentGlobeData(), STATE.layers);
                 }
+                
             }
         });
         
@@ -243,24 +244,19 @@ function goEarth() {
     document.getElementById('btn-solar').classList.remove('active');
     document.getElementById('btn-impact').classList.remove('active');
     
-    // Hide other modes
-        // Hide other modes
     document.getElementById('solar-wrap').classList.add('hidden');
     document.getElementById('impact-wrap').classList.add('hidden');
     document.getElementById('gallery-wrap').classList.add('hidden');
     document.getElementById('btn-gallery').classList.remove('active');
     
-    // Show Earth mode
     document.getElementById('earth-wrap').classList.remove('hidden');
     
-    // Show Earth-specific UI elements
     document.getElementById('layers').classList.add('show');
     document.getElementById('chips').classList.add('show');
     document.getElementById('hint').textContent = 'Click anywhere on Earth for local space intel · Click markers for live events';
     
     closePanel();
     
-    // Show Earth info sidebar
     setTimeout(() => {
         document.getElementById('earth-info-sidebar').classList.add('show');
         _updateEarthSidebarData();
@@ -268,6 +264,9 @@ function goEarth() {
     
     // Initialize or refresh globe
     _ensureGlobeAndRefresh();
+    
+    // ← ADD THIS LINE
+    if (window.LocationSearch) LocationSearch.showForEarth();
 }
 
 function closeEarthSidebar() {
